@@ -26,6 +26,7 @@ done
 [[ -z $ENGINE ]] && { echo "--engine needs a value" >&2; exit 2; }
 case $ENGINE in firefox|chromium|webkit) ;; *) echo "--engine must be firefox, chromium or webkit" >&2; exit 2 ;; esac
 
+PYTHON=${PYTHON:-$(command -v python3 || true)}
 if [[ -z $NODE ]]; then
   fail "node is not on PATH. Run: nix develop --command ./check.sh"
   exit $STATUS
@@ -42,6 +43,11 @@ if "$NODE" tools/build.mjs; then :; else fail "build failed"; fi
 
 # 2. Syntax and self-containment, per file so an error localises to the file
 #    that has it rather than to whichever test imported it first.
+#
+#    The Python pass runs first and needs nothing but python3: bracket balance,
+#    unterminated literals, leftover module keywords, and duplicate top-level
+#    names in the bundle's single scope. When node itself is unavailable, this is
+#    the difference between "the artifact cannot parse" and no idea why.
 report "2/6 syntax"
 for file in src/*.js tools/*.mjs tests/*.mjs; do
   if ! "$NODE" --experimental-vm-modules -e '
@@ -53,6 +59,11 @@ for file in src/*.js tools/*.mjs tests/*.mjs; do
     fail "syntax error in $file"
   fi
 done
+if [[ -n $PYTHON ]]; then
+  "$PYTHON" tools/check-syntax.py || fail "structural JS check failed"
+else
+  fail "python3 is not on PATH; tools/check-syntax.py cannot run"
+fi
 "$NODE" tools/check-artifact.mjs || fail "artifact self-containment check failed"
 
 # 3. Model self-check, in plain Python. This is the one phase that runs with no
@@ -61,7 +72,6 @@ done
 #    assumptions about src/app.js, so it cannot quietly drift into asserting a
 #    rule the app no longer implements.
 report "3/6 model self-check (python)"
-PYTHON=${PYTHON:-$(command -v python3 || true)}
 if [[ -z $PYTHON ]]; then
   fail "python3 is not on PATH; the model self-check cannot run"
 elif ! "$PYTHON" tools/selfcheck.py > .tmp/selfcheck.log 2>&1; then
