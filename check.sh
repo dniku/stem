@@ -37,12 +37,12 @@ fi
 mkdir -p .tmp
 
 # 1. Build. The tests read the artifact, so a stale artifact must never pass.
-report "1/5 build artifact"
+report "1/6 build artifact"
 if "$NODE" tools/build.mjs; then :; else fail "build failed"; fi
 
 # 2. Syntax and self-containment, per file so an error localises to the file
 #    that has it rather than to whichever test imported it first.
-report "2/5 syntax"
+report "2/6 syntax"
 for file in src/*.js tools/*.mjs tests/*.mjs; do
   if ! "$NODE" --experimental-vm-modules -e '
     const fs = require("fs"), vm = require("vm");
@@ -55,8 +55,23 @@ for file in src/*.js tools/*.mjs tests/*.mjs; do
 done
 "$NODE" tools/check-artifact.mjs || fail "artifact self-containment check failed"
 
-# 3. Acoustics. The part everything else depends on, tested without a browser.
-report "3/5 acoustics"
+# 3. Model self-check, in plain Python. This is the one phase that runs with no
+#    node and no browser, so the gesture rules and the acoustics stay covered on a
+#    machine that cannot reach the pinned toolchain at all. It also guards its own
+#    assumptions about src/app.js, so it cannot quietly drift into asserting a
+#    rule the app no longer implements.
+report "3/6 model self-check (python)"
+PYTHON=${PYTHON:-$(command -v python3 || true)}
+if [[ -z $PYTHON ]]; then
+  fail "python3 is not on PATH; the model self-check cannot run"
+elif ! "$PYTHON" tools/selfcheck.py > .tmp/selfcheck.log 2>&1; then
+  tail -40 .tmp/selfcheck.log; fail "model self-check failed"
+else
+  grep -cE '^  ok ' .tmp/selfcheck.log | xargs -I{} echo "{} behavioural assertions passed"
+fi
+
+# 4. Acoustics. The part everything else depends on, tested without a browser.
+report "4/6 acoustics"
 if "$NODE" tests/acoustics.test.mjs > .tmp/acoustics.log 2>&1; then
   grep -E '^# (pass|fail)' .tmp/acoustics.log
 else
@@ -64,7 +79,7 @@ else
 fi
 
 # 4. Interaction. Drives the loaded artifact and checks observable behaviour.
-report "4/5 interaction (engine: $ENGINE)"
+report "5/6 interaction (engine: $ENGINE)"
 if "$NODE" tests/interaction.test.mjs --engine "$ENGINE" > .tmp/interaction.log 2>&1; then
   grep -E '^# (pass|fail)' .tmp/interaction.log
 else
@@ -72,7 +87,7 @@ else
 fi
 
 # 5. Goldens. Byte comparison against reviewed baselines.
-report "5/5 golden screenshots (engine: $ENGINE)"
+report "6/6 golden screenshots (engine: $ENGINE)"
 if "$NODE" tests/golden.test.mjs --engine "$ENGINE" "${ARGS[@]+"${ARGS[@]}"}" > .tmp/golden.log 2>&1; then
   tail -6 .tmp/golden.log
 else

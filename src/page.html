@@ -22,6 +22,19 @@
     </div>
 
     <aside id="panel" aria-label="Explanation and controls">
+      <!--
+        The legend is separate from the onboarding sheet and never hides: once a
+        person has read the explanation, the gesture reminders are the one thing
+        that still has to be on screen. Both live in #panel, which is the column
+        on a desktop and the sheet on a phone.
+      -->
+      <div id="legend" aria-label="Controls">
+        <p><strong>Drag up from the block</strong> to cut a pipe.</p>
+        <p><strong>Touch a pipe</strong> to blow it. <strong>Drag it sideways</strong> for bore,
+        <strong>across its mouth</strong> for tone, <strong>flick it up hard</strong> to overblow,
+        <strong>double-tap</strong> to remove.</p>
+      </div>
+
       <div id="onboarding">
         <h2>What this is</h2>
         <p>Every pipe here is a real model of a <strong>stopped flue pipe</strong>: a tube closed
@@ -30,17 +43,20 @@
         <p>…and that one line is responsible for everything you are about to hear.</p>
         <h3>Things to try</h3>
         <ul>
-          <li><strong>Drag up from the block</strong> to cut a pipe. Longer means lower — and it
-          goes down twice as fast as you might expect, because length is in the denominator.</li>
-          <li><strong>Touch a pipe</strong> to blow it. Hold it to keep it sounding.</li>
+          <li><strong>Drag up from the block</strong> to cut a pipe. Longer means lower, and
+          <strong>twice as long is an octave lower</strong>: length is in the denominator.</li>
+          <li><strong>Touch a pipe</strong> to blow it, and hold to keep it sounding.</li>
           <li><strong>Drag a pipe sideways</strong> to change its bore. A wider mouth makes the pipe
-          <em>acoustically longer</em>, so a fat pipe sits flat of its measured length.</li>
-          <li><strong>Drag a pipe up</strong> hard to overblow it. It jumps a <strong>twelfth</strong>
-          (3×), not an octave — the signature of a pipe with no even partials.</li>
-          <li>Turn <strong>tune-lock</strong> off, cut two pipes a few cents apart, and blow both:
-          you will hear the beat frequency, which is the difference between them.</li>
-          <li>Warm the air with the slider. Sound travels faster in warm air, so
-          <strong>the whole rack goes sharp together</strong>.</li>
+          <em>acoustically longer</em>, so a fat pipe sits <em>flat</em> of its measured length.</li>
+          <li><strong>Drag across a pipe's mouth</strong> — the brass lip. Low gives a flutey tone,
+          high a stringy one: where the windhole sits decides which partials get excited.</li>
+          <li><strong>Flick a pipe up hard</strong> to overblow it. It jumps a <strong>twelfth</strong>
+          (3×), not an octave — the signature of a pipe closed at the foot, which has no even partials.
+          The wave drawn inside gains a node when it happens.</li>
+          <li>Turn <strong>tune-lock</strong> off, cut two pipes a few cents apart, and blow both: you
+          hear the <strong>beat</strong>, which is exactly the difference between them.</li>
+          <li>Warm the air with the slider. Sound travels faster in warm air, so the
+          <strong>whole rack goes sharp together</strong>.</li>
         </ul>
         <button id="onboarding-close" type="button">Start playing</button>
       </div>

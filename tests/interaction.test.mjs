@@ -107,29 +107,72 @@ test('dragging a pipe sideways widens the bore and drops the pitch', async () =>
     const pipe = window.__stem.organ.pipes[0];
     return { radius: pipe.radiusM, frequency: pipe.frequencyHz(window.__stem.organ.temperatureC) };
   });
-  await dragBench(page, { x: target.centerX, y: target.middle.y }, { x: target.centerX + 120, y: target.middle.y }, 10);
+  // Grab below the mouth so the drag is read as a bore change, not a mouth move.
+  const grabY = Math.round(target.topY + (anchors.blockY - target.topY) * 0.75);
+  await dragBench(page, { x: target.centerX, y: grabY }, { x: target.centerX + 120, y: grabY }, 10);
   const after = await page.evaluate(() => {
     const pipe = window.__stem.organ.pipes[0];
     return { radius: pipe.radiusM, frequency: pipe.frequencyHz(window.__stem.organ.temperatureC) };
   });
   assert.ok(after.radius > before.radius, `radius did not grow: ${before.radius} -> ${after.radius}`);
-  // Wider bore -> longer effective length -> flatter. This is the honest,
-  // counter-intuitive consequence of the end correction.
+  // Wider bore -> longer effective length -> flatter. The honest, counter-
+  // intuitive consequence of the end correction, and the reason a wide pipe is
+  // cut shorter than the arithmetic says.
   assert.ok(after.frequency < before.frequency, `pitch did not drop: ${before.frequency} -> ${after.frequency}`);
 });
 
-test('dragging a pipe up overblows it into the twelfth', async () => {
+test('dragging across the mouth moves the windhole and changes the tone colour', async () => {
+  const { page } = await freshPage();
+  const anchors = await page.evaluate(() => window.__stem.anchors());
+  const target = anchors.pipes[0];
+  // Move the mouth down the pipe: the grab point must track the mouth, which
+  // moves as it is dragged, so this ends at a fixed screen position below it.
+  const to = { x: target.mouth.x, y: target.mouth.y + 90 };
+  await dragBench(page, target.mouth, to, 10);
+  const after = await page.evaluate(() => {
+    const pipe = window.__stem.organ.pipes[0];
+    return { footprint: pipe.footprint, third: pipe.partialAmplitudes(3)[2] };
+  });
+  assert.ok(after.footprint < 0.4, `footprint should have moved low, got ${after.footprint}`);
+  // A low windhole means a quiet third partial: this is the tone-colour claim,
+  // stated as a number the audio engine actually uses.
+  const bright = await page.evaluate(() => window.__stem.organ.pipes[0].partialAmplitudes(3)[2] / window.__stem.organ.pipes[0].partialAmplitudes(3)[0]);
+  assert.ok(bright < 0.35, `a low windhole should have a weak third partial, got ratio ${bright}`);
+});
+
+test('a firm upward flick overblows a pipe into the twelfth', async () => {
   const { page } = await freshPage();
   const anchors = await page.evaluate(() => window.__stem.anchors());
   const target = anchors.pipes[0];
   const before = target.frequency;
-  await dragBench(page, target.middle, { x: target.centerX, y: target.middle.y - 140 }, 10);
+  await dragBench(page, target.middle, { x: target.centerX, y: target.middle.y - 160 }, 10);
   const after = await page.evaluate(() => {
     const pipe = window.__stem.organ.pipes[0];
     return { register: pipe.register, frequency: pipe.frequencyHz(window.__stem.organ.temperatureC) };
   });
   assert.equal(after.register, 2, 'a firm upward drag should overblow into register 2');
   assert.ok(Math.abs(after.frequency / before - 3) < 0.02, `${after.frequency / before}x, expected 3x`);
+});
+
+/**
+ * A slight drag on the way to holding a note must leave the pitch alone.
+ *
+ * This is the guard on the overblow gesture: without a distance gate, a thumb
+ * that slips a few pixels would throw the pipe up a twelfth, and the instrument
+ * would feel broken rather than responsive.
+ */
+test('a small drag on a pipe leaves its pitch alone', async () => {
+  const { page } = await freshPage();
+  const anchors = await page.evaluate(() => window.__stem.anchors());
+  const target = anchors.pipes[0];
+  const before = target.frequency;
+  await dragBench(page, target.middle, { x: target.centerX + 6, y: target.middle.y - 14 }, 6);
+  const after = await page.evaluate(() => {
+    const pipe = window.__stem.organ.pipes[0];
+    return { register: pipe.register, frequency: pipe.frequencyHz(window.__stem.organ.temperatureC) };
+  });
+  assert.equal(after.register, 1, 'a small drag should not overblow');
+  assert.ok(Math.abs(after.frequency - before) < 0.001, `frequency drifted: ${before} -> ${after.frequency}`);
 });
 
 test('the temperature slider retunes the whole rack together', async () => {
