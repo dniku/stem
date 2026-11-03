@@ -1,0 +1,58 @@
+# The same command as local development, in the same pinned toolchain. This is
+# deliberately not a second recipe with node and Playwright installed by hand:
+# a CI that defines "correct" differently from the local shell is a CI that
+# drifts.
+#
+# flake.lock pins nixpkgs to one commit, so CI cannot pick up a new node or a new
+# Playwright and repaint the golden screenshots differently from the machine the
+# baselines came from.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      # fetch-depth 0: the artifact is a build product committed next to its
+      # sources, and full history lets a later "does the committed artifact match
+      # a rebuild" step see the commit that produced it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Pinned to a released tag: an unpinned installer could change how nix
+      # resolves the lock between runs.
+      - uses: cachix/install-nix-action@v31.11.3
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      # packages.default is the shipped artifact, so a broken package build has to
+      # be a red build. Nothing else would catch it: the checklist runs `nix
+      # develop`, which does not build the package at all.
+      - name: Build the package and check it matches the committed artifact
+        run: |
+          # Addressed by store path rather than a result symlink: --no-link
+          # creates no symlink, so the obvious `result/index.html` is a missing
+          # file, and that reads as a build error rather than a wrong path.
+          OUT=$(nix build --no-link --print-out-paths)
+          sha256sum "$OUT/index.html" index.html
+          test "$(sha256sum < "$OUT/index.html")" = "$(sha256sum < index.html)"
+
+      - name: Run the acceptance checklist
+        run: nix develop --command ./check.sh --engine firefox
+
+      # On failure, the frames CI saw are the difference between "the layout
+      # moved" and "this runner's fonts differ", so keep them.
+      - name: Upload test output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-output
+          path: .tmp/

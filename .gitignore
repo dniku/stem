@@ -1,0 +1,10 @@
+# Test scratch: diffs, captured frames, logs. Rebuilt every run.
+.tmp/
+# Nix build symlink and result dirs.
+result
+result-*
+
+# Generated font subsets. Only the .base64 form is committed, because the build
+# reads that and must not need font tooling or network. The raw .woff2 is the
+# same bytes in another encoding and adds nothing to review.
+build/*.woff2

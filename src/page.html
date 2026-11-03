@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stem — cut a pipe, hear the air column decide</title>
+<meta name="description" content="An interactive organ-pipe bench: cut pipes to length, change their bore, overblow them into the next register, and hear what the physics of a closed pipe actually does.">
+<style>
+/* __STEM_CSS__ */
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="masthead">
+    <h1>Stem</h1>
+    <p class="tagline">Cut your own organ pipes. The air column decides the pitch.</p>
+  </header>
+
+  <main id="stage">
+    <div id="canvas-wrap">
+      <canvas id="bench" aria-label="Organ pipe bench. Drag up from the block at the bottom to cut a pipe. Touch a pipe to blow it."></canvas>
+    </div>
+
+    <aside id="panel" aria-label="Explanation and controls">
+      <div id="onboarding">
+        <h2>What this is</h2>
+        <p>Every pipe here is a real model of a <strong>stopped flue pipe</strong>: a tube closed
+        at the foot and open at the top. A closed tube can only hold odd quarter-waves, so</p>
+        <p class="formula">pitch = speed of sound ÷ (4 × length)</p>
+        <p>…and that one line is responsible for everything you are about to hear.</p>
+        <h3>Things to try</h3>
+        <ul>
+          <li><strong>Drag up from the block</strong> to cut a pipe. Longer means lower — and it
+          goes down twice as fast as you might expect, because length is in the denominator.</li>
+          <li><strong>Touch a pipe</strong> to blow it. Hold it to keep it sounding.</li>
+          <li><strong>Drag a pipe sideways</strong> to change its bore. A wider mouth makes the pipe
+          <em>acoustically longer</em>, so a fat pipe sits flat of its measured length.</li>
+          <li><strong>Drag a pipe up</strong> hard to overblow it. It jumps a <strong>twelfth</strong>
+          (3×), not an octave — the signature of a pipe with no even partials.</li>
+          <li>Turn <strong>tune-lock</strong> off, cut two pipes a few cents apart, and blow both:
+          you will hear the beat frequency, which is the difference between them.</li>
+          <li>Warm the air with the slider. Sound travels faster in warm air, so
+          <strong>the whole rack goes sharp together</strong>.</li>
+        </ul>
+        <button id="onboarding-close" type="button">Start playing</button>
+      </div>
+    </aside>
+  </main>
+
+  <footer id="controls">
+    <p id="status" role="status" aria-live="polite"></p>
+    <p id="audio-note" class="quiet"></p>
+    <div class="control-row">
+      <label class="control">
+        <span>Air temperature <output id="temperature-value">20 °C</output></span>
+        <input id="temperature" type="range" min="5" max="38" step="1" value="20">
+      </label>
+      <label class="control control-check">
+        <input id="snap" type="checkbox" checked>
+        <span>Tune-lock</span>
+      </label>
+      <button id="reset" type="button" class="control-button">New rack</button>
+      <button id="help-toggle" type="button" class="control-button">Help</button>
+    </div>
+  </footer>
+</div>
+<script>
+/* __STEM_JS__ */
+</script>
+</body>
+</html>
