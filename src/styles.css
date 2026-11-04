@@ -1,4 +1,9 @@
-/* __FONT_FACE__ */
+/*
+ * The @font-face rules are not marked here: the bundler prepends them from
+ * tools/build-lib.mjs (see EMBEDDED_FACES), and buildArtifact fails the build if
+ * a build placeholder survives into the artifact -- so a marker in this file
+ * would be that leftover, and cannot be.
+ */
 
 /*
  * Layout notes for anyone editing this file
@@ -85,11 +90,24 @@ html, body {
   min-height: 0;
   /* The canvas and the legend overlay share this box. */
   display: grid;
+  /*
+   * The row must be the container's height, not the content's. An auto-sized
+   * grid row is measured by its items' min-content contribution, and a canvas
+   * contributes its intrinsic bitmap height -- so on a landscape phone the row
+   * came out 422px inside a 239px wrapper, and the overflowing bottom painted
+   * over the control bar, swallowing taps on Help and New rack. minmax(0, 1fr)
+   * makes the row exactly the available height; min-height: 0 on the canvas
+   * removes the same intrinsic floor from the item.
+   */
+  grid-template-rows: minmax(0, 1fr);
+  /* Never let a drawn pixel escape into the control bar. */
+  overflow: hidden;
 }
 
 #bench {
   display: block;
   grid-area: 1 / 1;
+  min-height: 0;
   width: 100%;
   height: 100%;
   /* The instrument is drawn, not scrolled: without this, a drag on a phone
@@ -132,8 +150,10 @@ html, body {
   max-height: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(14, 22, 34, 0.97);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  /* Fully opaque: the sheet sits over the bench, and a translucent card
+     lets the pipes show through the explanation text. */
+  background: #101a29;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   padding: 14px 16px 18px;
 }
 
