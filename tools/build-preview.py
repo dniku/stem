@@ -19,7 +19,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 MODULES = ["acoustics.js", "audio.js", "app.js"]
 FACES = [(400, "StemSans-regular.woff2.base64"), (700, "StemSans-bold.woff2.base64")]
 FAMILY = "Stem Sans"
-FONT_TOKEN = "/* __FONT_FACE__ */"
 CSS_TOKEN = "/* __STEM_CSS__ */"
 SCRIPT_PLACEHOLDER = re.compile(r"<script>\n/\* __STEM_JS__ \*/\n</script>")
 
@@ -62,10 +61,11 @@ def strip_module_syntax(source: str, name: str) -> str:
 
 def build() -> str:
     template = (ROOT / "src" / "page.html").read_text()
-    styles = (ROOT / "src" / "styles.css").read_text()
-    if styles.count(FONT_TOKEN) != 1:
-        raise SystemExit("styles.css is missing the font-face placeholder")
-    styles = styles.replace(FONT_TOKEN, font_face_css(), 1)
+    # Prepend, matching buildArtifact in tools/build-lib.mjs: `${fontFaceCss(root)}
+    # \n\n${styles}`. The faces are not a placeholder inside styles.css, and the
+    # two builders must agree byte for byte or CI's package hash and the local
+    # artifact describe different files.
+    styles = font_face_css() + "\n\n" + (ROOT / "src" / "styles.css").read_text()
 
     sources = [(name, strip_module_syntax((ROOT / "src" / name).read_text(), name)) for name in MODULES]
     declared: dict[str, str] = {}

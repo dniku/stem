@@ -69,6 +69,22 @@ else
 fi
 "$NODE" tools/check-artifact.mjs || fail "artifact self-containment check failed"
 
+# 2b. Builder parity. Two implementations produce this artifact -- node (the
+#     authority CI hashes) and a python3 port for machines that cannot run node.
+#     They are only worth having if they agree byte for byte; a difference means
+#     the local preview and the shipped file are different apps, and nothing else
+#     here would notice.
+report "2b/6 builder parity"
+if [[ -n $PYTHON ]] && ! diff <("$PYTHON" -c '
+import sys; sys.path.insert(0, "tools")
+import build_preview
+sys.stdout.write(build_preview.build())
+') index.html; then
+  fail "the python builder and the committed artifact differ (rebuild with node and re-check the port)"
+else
+  echo "python port reproduces the artifact byte for byte"
+fi
+
 # 3. Model self-check, in plain Python. This is the one phase that runs with no
 #    node and no browser, so the gesture rules and the acoustics stay covered on a
 #    machine that cannot reach the pinned toolchain at all. It also guards its own
