@@ -29,6 +29,11 @@ The picture is not decoration. Inside each pipe is the **pressure standing wave*
 | **Air temperature** slider | Retunes the whole rack | `c = 331.3·√(1 + T/273.15)`: warmer air is faster air, so every pipe goes sharp *together*. |
 | **Tune-lock** | Snap to semitones / free | Off, pipes sit exactly where you cut them and neighbours **beat** at their difference. |
 
+On a phone the explanation is a bottom sheet and the gesture reminders sit over
+the top of the bench; both are click-through, so the block you drag from stays
+usable underneath them, and Close (or Escape) dismisses the sheet without taking
+the controls with it.
+
 The most rewarding thing to try: turn tune-lock off, cut two pipes in the same column a few pixels apart, and blow both. You hear the beat frequency, which is literally `|f₁ − f₂|`.
 
 ## The physics, and where it is honest
@@ -73,7 +78,7 @@ nix develop --command ./check.sh --update
 Six phases, all of which **fail** rather than skip when a tool, a baseline or an interpreter is missing — a suite that prints success after painting nothing is worse than a red build.
 
 1. **Build** the artifact. Tests read it, so a stale one can never pass.
-2. **Syntax and self-containment**: per-file parse; bracket balance, unterminated literals, leftover `import`/`export` and duplicate top-level names via `tools/check-syntax.py` (python3 only); no external references, no storage APIs, both font faces present as `data:font/woff2`.
+2. **Syntax and self-containment**: per-file parse; bracket balance, unterminated literals, leftover `import`/`export` and duplicate top-level names via `tools/check-syntax.py` (python3 only); a scan of the **shipped bundle** for a truncation introduced by the bundler itself (`tools/check-bundle.py`, python3 only); no external references, no storage APIs, both font faces present as `data:font/woff2`.
 3. **Model self-check** (`tools/selfcheck.py`): 40+ behavioural assertions — the gesture rules and the acoustics — with **no node and no browser**. It also asserts its own assumptions about `src/app.js`, so it cannot quietly drift into checking a rule the app no longer implements.
 4. **Acoustics**: reference values and named behaviours in plain node.
 5. **Interaction**: drives the built artifact with synthetic touch gestures and asserts observable state — cutting adds a pipe whose pitch is `c/4L` for the length drawn, widening the bore drops the pitch, a firm flick multiplies it by exactly 3, a small drag changes nothing, temperature shifts every pipe by the same ratio.
@@ -90,13 +95,20 @@ What the layout looks like, rendered from the app's own geometry:
 
 ## Verification status — please read
 
-**The browser suite has not been run for this commit.** Chromium and Firefox could not be launched in the environment where this was built, and the escalation needed to reach them timed out repeatedly, so **the golden screenshots above do not exist yet** and phases 5–6 are unverified here. What *was* run:
+**The browser suite has not been run for this commit, and CI cannot pass until it has.** Chromium and Firefox could not be launched where this was built, and the escalation needed to reach them timed out on every attempt, so **the golden baselines do not exist**. That is not merely a gap in coverage: `tests/golden.test.mjs` fails rather than skips when a baseline is missing, by design, so the first CI run will be red with "no baseline at tests/golden/firefox/…". Run `--update`, look at every image, and commit them to turn it green.
 
-- Phases 1–3 as described above, and they pass.
-- Layout reviewed by rendering the real geometry to PNG with a purpose-built previewer (`tools/preview-png.py`) and looking at it. That is how the pipe widths, the centred rack, the long-rack fit and the choice of pressure-over-displacement were decided. **It is a layout preview, not the app** — no real font, CSS box model or canvas compositing.
-- The JavaScript has never been parsed by a real JS engine here (no node available). `tools/check-syntax.py` is a checker, not a parser: its failure modes were verified by injection, but it cannot catch a bad identifier or a type error.
+What *was* run, and passed:
 
-Run `nix develop --command ./check.sh` on a machine with the toolchain before trusting the presentation.
+- Phases 1–3 as described above.
+- **The artifact was scanned as shipped**: `tools/check-bundle.py` walks the inline script in `index.html` and reports an unbalanced brace, unterminated string, template literal, comment or regex. It passed on the real bundle and was verified to fail on six injected defects.
+- **Layout reviewed by rendering the real geometry to PNG and looking at it** (`tools/preview-png.py`). That is how pipe widths, the centred rack, the long-rack fit and the choice of pressure-over-displacement were decided. It is a layout preview, not the app: no real font, no CSS box model, no canvas compositing.
+- Phone chrome was reviewed by computing the DOM geometry from `src/styles.css`, because the preview draws the canvas and not the page around it. That is how the sheet-over-the-block bug was found.
+
+What could **not** be run here, and is therefore unverified:
+
+- Any real JavaScript parser. `check-bundle.py` proves the bundle is not visibly truncated; it cannot catch a bad identifier, a wrong arity, or a type error. The artifact may still throw at runtime.
+- Any rendering of the actual page, in any engine, at any viewport. **No screenshot of the real app has been looked at.** The phone fixes below are reasoned from the stylesheet and asserted by tests that have themselves never executed.
+- CI, publication, and the golden baselines.
 
 ## CI
 
