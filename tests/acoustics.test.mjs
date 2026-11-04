@@ -55,10 +55,17 @@ test('an 8-foot open pipe is middle C, so a stopped one is an octave lower', () 
   // organ pipes and the reason organ "8 ft" means an octave lower than "8 ft open".
   const stopped = new Pipe(1.6, 0.004);
   const stoppedHz = stopped.frequencyHz(20);
-  const asIfOpen = (2 * speedOfSound(20)) / (2 * stopped.effectiveLengthM());
+  // Open pipe: f = c / 2L. Stopped: f = c / 4L. Same effective length on both, so
+  // the open pipe is exactly twice as high. Writing the open case against a
+  // different denominator than the stopped one hides that factor of two.
+  const asIfOpen = speedOfSound(20) / (2 * stopped.effectiveLengthM());
   assert.ok(Math.abs(asIfOpen / stoppedHz - 2) < 1e-9, 'stopped pipe is not an octave below open');
   assert.ok(Math.abs(stoppedHz - 53.6) < 0.4, `1.6 m stopped gave ${stoppedHz}`);
-  assert.equal(organ.nearestSemitone(stopped) % 12, 0, 'a 1.6 m stopped pipe should be a C');
+  // A 1.6 m stopped pipe is 27 semitones below middle C: a C, three octaves down.
+  // Note that `% 12 === 0` does not express "is a C" for negatives in JavaScript
+  // (-27 % 12 is -3, since the sign follows the dividend), so the octave
+  // relationship is asserted directly instead.
+  assert.equal(organ.nearestSemitone(stopped), -27, 'a 1.6 m stopped pipe should be C1, 27 semitones below middle C');
 });
 
 test('halving the length raises the pitch by exactly an octave', () => {
