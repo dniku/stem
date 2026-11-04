@@ -231,3 +231,88 @@ test('the layout keeps the block and the labels on screen in every scene', async
     }
   }
 });
+
+/**
+ * The explanation must never cost the player the bench.
+ *
+ * These cases exist because the sheet used to share #panel with the gesture
+ * legend: dismissing the explanation hid the reminders, "Help" could hide the
+ * sliders with no way back, and on a portrait phone the sheet sat over viewport
+ * y=328 and below while the block you drag from sits at y=679 -- so the opening
+ * gesture was unreachable. Every assertion is about a box a finger can reach,
+ * not about a stylesheet value.
+ */
+test('the explanation overlay never takes height from the bench', async () => {
+  for (const scene of SCENES) {
+    const closed = await openScene(engines, ENGINE, scene, ARTIFACT);
+    const closedBox = await closed.page.evaluate(() => ({
+      height: window.__stem.anchors().height,
+      blockY: window.__stem.layout.blockY,
+    }));
+    await closed.browser.close();
+
+    const open = await openScene(engines, ENGINE, scene, ARTIFACT);
+    await open.page.click('#help-toggle');
+    const openBox = await open.page.evaluate(() => ({
+      height: window.__stem.anchors().height,
+      blockY: window.__stem.layout.blockY,
+      sheetVisible: !document.querySelector('#onboarding').hasAttribute('hidden'),
+    }));
+    await open.browser.close();
+
+    assert.ok(openBox.sheetVisible, `${scene.name}: Help did not open the explanation`);
+    // Same canvas height, same block position: the sheet is an overlay.
+    assert.equal(openBox.height, closedBox.height, `${scene.name}: opening the sheet resized the canvas`);
+    assert.equal(openBox.blockY, closedBox.blockY, `${scene.name}: opening the sheet moved the block`);
+  }
+});
+
+test('the controls stay on screen when the explanation opens and closes', async () => {
+  for (const scene of SCENES) {
+    const { page, browser } = await openScene(engines, ENGINE, scene, ARTIFACT);
+    for (const id of ['#temperature', '#snap', '#reset', '#help-toggle']) {
+      const before = await page.isVisible(id);
+      assert.ok(before, `${scene.name}: ${id} is not visible to start with`);
+    }
+    await page.click('#help-toggle');
+    await page.click('#panel-close');
+    for (const id of ['#temperature', '#snap', '#reset', '#help-toggle']) {
+      const after = await page.isVisible(id);
+      assert.ok(after, `${scene.name}: ${id} disappeared after opening and closing the explanation`);
+    }
+    await browser.close();
+  }
+});
+
+test('the gesture legend stays visible and lets drags through to the bench', async () => {
+  const { page, browser } = await openScene(engines, ENGINE, SCENES[0], ARTIFACT);
+  await page.evaluate(() => document.querySelector('#onboarding').setAttribute('hidden', ''));
+  assert.ok(await page.isVisible('#legend'), 'the reminders vanished once onboarding was dismissed');
+
+  // The legend is deliberately translucent over the bench, so it must not be a
+  // wall: a press at its centre has to land on the canvas underneath.
+  const hit = await page.evaluate(() => {
+    const legend = document.querySelector('#legend');
+    const box = legend.getBoundingClientRect();
+    const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return { tag: target?.tagName ?? 'none', passThrough: getComputedStyle(legend).pointerEvents };
+  });
+  assert.equal(hit.tag, 'CANVAS', `the legend swallows presses (${hit.tag} got the press)`);
+  assert.equal(hit.passThrough, 'none', 'the legend should be pointer-transparent');
+  await browser.close();
+});
+
+test('cutting still works on a phone with the explanation open', async () => {
+  // The regression in its plainest form: on a portrait phone the sheet covered
+  // the block, so the first gesture a new visitor makes did nothing.
+  const scene = SCENES[1];
+  const { page, browser } = await openScene(engines, ENGINE, scene, ARTIFACT);
+  const before = await page.evaluate(() => window.__stem.organ.pipes.length);
+  const anchors = await page.evaluate(() => window.__stem.anchors());
+  const from = { x: anchors.empty.x, y: anchors.blockY - 6 };
+  const to = { x: from.x, y: from.y - 180 };
+  await dragBench(page, from, to, 10);
+  const after = await page.evaluate(() => window.__stem.organ.pipes.length);
+  assert.ok(after > before, `dragging from the block cut nothing (${before} -> ${after} pipes)`);
+  await browser.close();
+});
