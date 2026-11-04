@@ -9,3 +9,7 @@ result-*
 # same bytes in another encoding and adds nothing to review.
 build/*.woff2
 __pycache__/
+
+# Golden comparison output: diffs and the frames a failing run painted.
+# The baselines under tests/golden/<engine>/ are committed; these are not.
+.tmp/golden-actual/
