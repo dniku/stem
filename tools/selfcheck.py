@@ -296,6 +296,47 @@ def check_source_contract() -> list[str]:
     return problems
 
 
+def check_markup_contract() -> list[str]:
+    """Every control the code and the stylesheet name must exist in the page.
+
+    This guards the failure that hid the phone bug: #panel was styled as a sheet,
+    targeted by Help, and dismissed by a button inside itself, so closing the
+    explanation also hid the gesture legend with no way back. A selector that
+    matches nothing, or a rendered control nobody listens to, is a control that
+    silently does not work -- which a screenshot of a desktop cannot see.
+    """
+    page = (ROOT / "src" / "page.html").read_text()
+    styles = (ROOT / "src" / "styles.css").read_text()
+    app_js = (ROOT / "src" / "app.js").read_text()
+    problems: list[str] = []
+
+    declared = set(re.findall(r'<[a-z]+[^>]*\bid="([^"]+)"', page, re.S))
+
+    # An id used by CSS or by app.js that the page never declares matches nothing.
+    referenced: set[str] = set()
+    referenced |= {m for m in re.findall(r"#([A-Za-z][\w-]*)\s*[,{:\s]", styles)
+                   if not m.isdigit()}
+    referenced |= set(re.findall(r"""querySelector(?:All)?\(['"]#([\w-]+)['"]\)""", app_js))
+    for name in sorted(referenced - declared):
+        problems.append(f"#${name} is styled or queried but no element declares it".replace("$", ""))
+
+    # An interactive element must be wired up, or it is a button that does nothing.
+    interactive = set(re.findall(
+        r'<(?:button|input)[^>]*\bid="([^"]+)"', page, re.S))
+    for name in sorted(interactive):
+        if f"'#{name}'" not in app_js and f'"#{name}"' not in app_js:
+            problems.append(f"#{name} is a rendered control with no listener in src/app.js")
+
+    # The controls must not be reachable only from inside the dismissable sheet,
+    # which is how the legend and the sliders got hidden on a phone.
+    sheet = re.search(r'<div id="onboarding">(.*?)\n      </div>', page, re.S)
+    if sheet:
+        for name in sorted(interactive & set(re.findall(r'id="([^"]+)"', sheet.group(1)))):
+            if name not in {"onboarding-close", "panel-close"}:
+                problems.append(f"#{name} lives inside the dismissable sheet and disappears with it")
+    return problems
+
+
 # --------------------------------------------------------------------------
 # Behavioural assertions
 # --------------------------------------------------------------------------
@@ -358,7 +399,7 @@ def organ_index(bench: Bench, pipe: Pipe) -> int:
 
 def main() -> int:
     print("== source contract ==")
-    contract = check_source_contract()
+    contract = check_source_contract() + check_markup_contract()
     for problem in contract:
         print(f"  FAIL {problem}")
     if contract:

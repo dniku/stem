@@ -19,14 +19,10 @@
   <main id="stage">
     <div id="canvas-wrap">
       <canvas id="bench" aria-label="Organ pipe bench. Drag up from the block at the bottom to cut a pipe. Touch a pipe to blow it."></canvas>
-    </div>
-
-    <aside id="panel" aria-label="Explanation and controls">
       <!--
-        The legend is separate from the onboarding sheet and never hides: once a
-        person has read the explanation, the gesture reminders are the one thing
-        that still has to be on screen. Both live in #panel, which is the column
-        on a desktop and the sheet on a phone.
+        The legend lives in the canvas row, not in the panel, for two reasons: it
+        must survive Help being closed, and on a phone it has to stay legible on
+        top of the bench rather than push the block off screen.
       -->
       <div id="legend" aria-label="Controls">
         <p><strong>Drag up from the block</strong> to cut a pipe.</p>
@@ -34,9 +30,14 @@
         <strong>across its mouth</strong> for tone, <strong>flick it up hard</strong> to overblow,
         <strong>double-tap</strong> to remove.</p>
       </div>
+    </div>
 
+    <aside id="panel" aria-label="Explanation">
       <div id="onboarding">
-        <h2>What this is</h2>
+        <div class="sheet-head">
+          <h2>What this is</h2>
+          <button id="panel-close" type="button" aria-label="Close the explanation">Close</button>
+        </div>
         <p>Every pipe here is a real model of a <strong>stopped flue pipe</strong>: a tube closed
         at the foot and open at the top. A closed tube can only hold odd quarter-waves, so</p>
         <p class="formula">pitch = speed of sound ÷ (4 × length)</p>

@@ -91,8 +91,8 @@ html, body {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-  /* The onboarding sheet is positioned against this on narrow screens, so the
+  grid-template-columns: minmax(0, 1fr);
+  /* The onboarding sheet is positioned against this on every breakpoint, so the
      containing block is declared with the element that establishes it rather
      than from inside the media query that uses it. */
   position: relative;
@@ -102,10 +102,13 @@ html, body {
   position: relative;
   min-width: 0;
   min-height: 0;
+  /* The canvas and the legend overlay share this box. */
+  display: grid;
 }
 
 #bench {
   display: block;
+  grid-area: 1 / 1;
   width: 100%;
   height: 100%;
   /* The instrument is drawn, not scrolled: without this, a drag on a phone
@@ -119,17 +122,75 @@ html, body {
   outline-offset: -2px;
 }
 
+/*
+ * The explanation is an overlay, not a column beside the bench. Two reasons,
+ * both about phones: taking a column out of the canvas row makes the bench
+ * shorter exactly where it has the least height, and a sheet that is part of the
+ * layout cannot be dismissed without resizing the instrument. It is click-through
+ * everywhere except the sheet itself, because the block you drag from sits under
+ * it and losing that gesture makes the app unplayable.
+ */
 #panel {
-  border-left: 1px solid var(--line);
-  background: var(--panel);
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(340px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  /* The sheet floats over the bench, so it must not swallow drags that start on
+     the bench around it. Only #onboarding takes pointer input. */
+  pointer-events: none;
+  z-index: 3;
+}
+
+#onboarding {
+  pointer-events: auto;
   overflow-y: auto;
+  max-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(14, 22, 34, 0.97);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
   padding: 14px 16px 18px;
 }
 
+.sheet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#panel-close {
+  flex: none;
+  padding: 6px 10px;
+  min-height: 36px;
+  font-size: 0.78rem;
+  color: var(--ink);
+  background: #1c2a3d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/*
+ * The gesture reminders, drawn over the top of the bench so they cost the canvas
+ * no height. Pointer-transparent: a reminder you cannot drag through is a
+ * reminder that breaks the thing it describes.
+ */
 #legend {
-  margin: 0 0 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
+  grid-area: 1 / 1;
+  align-self: start;
+  justify-self: start;
+  max-width: min(46ch, calc(100% - 24px));
+  margin: 10px 12px;
+  padding: 8px 11px;
+  border-radius: var(--radius);
+  background: rgba(10, 16, 24, 0.72);
+  pointer-events: none;
+  z-index: 2;
 }
 
 #legend p {
@@ -267,19 +328,20 @@ input[type="range"] {
  * keeps the top of the screen, which is where the block and the pipes are.
  */
 @media (max-width: 820px) {
-  #stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-  #panel {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    max-height: 62%;
+  /* The sheet comes up from the bottom edge on a phone, where a right-hand card
+     would sit under the thumb of whoever is holding it. It stays an overlay, and
+     #panel keeps pointer-events: none, so the block under it still drags. */
+  #panel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; }
+  #onboarding {
+    max-height: 78vh;
+    border-radius: var(--radius) var(--radius) 0 0;
     border-left: 0;
-    border-top: 1px solid var(--line);
-    background: rgba(14, 22, 34, 0.97);
-    z-index: 3;
+    border-right: 0;
+    border-bottom: 0;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   }
   #masthead { padding: 8px 14px 5px; }
+  #legend { font-size: 0.74rem; }
   /* Two lines of live status rather than one, because a narrow column wraps the
      sentence and a clipped status hides the explanation of what just happened. */
   #status { min-height: 3.4em; }
@@ -289,6 +351,15 @@ input[type="range"] {
 @media (max-height: 480px) {
   #masthead .tagline { display: none; }
   #status { min-height: 2.2em; font-size: 0.8rem; }
+  /*
+   * A phone on its side leaves the bench about 230px of height. The block sits at
+   * its bottom and pipes hang upwards from it, so the top of a tall pipe used to
+   * be off screen and the legend used to eat two more lines of it. The bench draws
+   * its own one-line hint (see drawCutHint in src/app.js), so the full legend
+   * yields to that here rather than shrinking the instrument further.
+   */
+  #legend { display: none; }
+  #onboarding { max-height: 88vh; font-size: 0.94em; }
 }
 
 </style>
@@ -303,14 +374,10 @@ input[type="range"] {
   <main id="stage">
     <div id="canvas-wrap">
       <canvas id="bench" aria-label="Organ pipe bench. Drag up from the block at the bottom to cut a pipe. Touch a pipe to blow it."></canvas>
-    </div>
-
-    <aside id="panel" aria-label="Explanation and controls">
       <!--
-        The legend is separate from the onboarding sheet and never hides: once a
-        person has read the explanation, the gesture reminders are the one thing
-        that still has to be on screen. Both live in #panel, which is the column
-        on a desktop and the sheet on a phone.
+        The legend lives in the canvas row, not in the panel, for two reasons: it
+        must survive Help being closed, and on a phone it has to stay legible on
+        top of the bench rather than push the block off screen.
       -->
       <div id="legend" aria-label="Controls">
         <p><strong>Drag up from the block</strong> to cut a pipe.</p>
@@ -318,9 +385,14 @@ input[type="range"] {
         <strong>across its mouth</strong> for tone, <strong>flick it up hard</strong> to overblow,
         <strong>double-tap</strong> to remove.</p>
       </div>
+    </div>
 
+    <aside id="panel" aria-label="Explanation">
       <div id="onboarding">
-        <h2>What this is</h2>
+        <div class="sheet-head">
+          <h2>What this is</h2>
+          <button id="panel-close" type="button" aria-label="Close the explanation">Close</button>
+        </div>
         <p>Every pipe here is a real model of a <strong>stopped flue pipe</strong>: a tube closed
         at the foot and open at the top. A closed tube can only hold odd quarter-waves, so</p>
         <p class="formula">pitch = speed of sound ÷ (4 × length)</p>
@@ -1534,14 +1606,31 @@ function bindControls() {
     app.message = 'Fresh rack: C3, G3, C4 \u2014 a stopped pipe\u2019s fundamental, its twelfth, and an octave.';
     syncControls();
   });
-  const panel = document.querySelector('#onboarding');
+  bindHelp();
+}
+
+/**
+ * Show and hide the explanation, without ever hiding the controls.
+ *
+ * Both buttons act on the sheet alone. They used to toggle #panel, which on a
+ * phone also held the gesture legend -- so closing the explanation with "Start
+ * playing" took the reminders with it, and "Help" could hide the temperature
+ * slider, tune-lock and New rack with no way back except reloading the page.
+ * Escaping does the same thing as Close, because a sheet that covers the bench
+ * should be dismissible from the keyboard too.
+ */
+function bindHelp() {
+  const sheet = document.querySelector('#onboarding');
+  if (!sheet) return;
+  const setOpen = (open) => sheet.toggleAttribute('hidden', !open);
   document.querySelector('#help-toggle')?.addEventListener('click', () => {
-    if (!panel) return;
-    const wasHidden = panel.hasAttribute('hidden');
-    panel.toggleAttribute('hidden', !wasHidden);
+    setOpen(!sheet.hasAttribute('hidden'));
   });
-  document.querySelector('#onboarding-close')?.addEventListener('click', () => {
-    panel?.setAttribute('hidden', '');
+  for (const id of ['#onboarding-close', '#panel-close']) {
+    document.querySelector(id)?.addEventListener('click', () => setOpen(false));
+  }
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !sheet.hasAttribute('hidden')) setOpen(false);
   });
 }
 

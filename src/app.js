@@ -834,14 +834,31 @@ function bindControls() {
     app.message = 'Fresh rack: C3, G3, C4 \u2014 a stopped pipe\u2019s fundamental, its twelfth, and an octave.';
     syncControls();
   });
-  const panel = document.querySelector('#onboarding');
+  bindHelp();
+}
+
+/**
+ * Show and hide the explanation, without ever hiding the controls.
+ *
+ * Both buttons act on the sheet alone. They used to toggle #panel, which on a
+ * phone also held the gesture legend -- so closing the explanation with "Start
+ * playing" took the reminders with it, and "Help" could hide the temperature
+ * slider, tune-lock and New rack with no way back except reloading the page.
+ * Escaping does the same thing as Close, because a sheet that covers the bench
+ * should be dismissible from the keyboard too.
+ */
+function bindHelp() {
+  const sheet = document.querySelector('#onboarding');
+  if (!sheet) return;
+  const setOpen = (open) => sheet.toggleAttribute('hidden', !open);
   document.querySelector('#help-toggle')?.addEventListener('click', () => {
-    if (!panel) return;
-    const wasHidden = panel.hasAttribute('hidden');
-    panel.toggleAttribute('hidden', !wasHidden);
+    setOpen(!sheet.hasAttribute('hidden'));
   });
-  document.querySelector('#onboarding-close')?.addEventListener('click', () => {
-    panel?.setAttribute('hidden', '');
+  for (const id of ['#onboarding-close', '#panel-close']) {
+    document.querySelector(id)?.addEventListener('click', () => setOpen(false));
+  }
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !sheet.hasAttribute('hidden')) setOpen(false);
   });
 }
 
