@@ -3,9 +3,16 @@
 # a CI that defines "correct" differently from the local shell is a CI that
 # drifts.
 #
-# flake.lock pins nixpkgs to one commit, so CI cannot pick up a new node or a new
-# Playwright and repaint the golden screenshots differently from the machine the
-# baselines came from.
+# Baselines are per-engine on purpose (tests/golden/<engine>/): engines disagree
+# about sub-pixel text layout, and a cross-engine "diff" of that is noise rather
+# than evidence. This job therefore pins the engine as well as the toolchain, and
+# the baselines it compares against were painted by that same engine.
+#
+# Reproducibility caveat, stated rather than implied: this repo has no committed
+# flake.lock, so `nix develop` re-resolves nixpkgs and CI may run a newer node or
+# Playwright than the machine the baselines came from. If goldens fail here while
+# passing locally, that difference is the first thing to suspect -- regenerate the
+# lock (nix flake lock) and commit it to close the gap.
 name: check
 
 on:
