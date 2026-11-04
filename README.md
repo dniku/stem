@@ -81,8 +81,8 @@ nix develop --command ./check.sh --update
 runs the same kind of toolchain from the paths already in `/nix/store`
 (node 22, Playwright 1.64.1, its browsers) with no daemon and no network. It is
 a PATH shim over whatever those store paths currently hold, not a guarantee of
-the versions `nix develop` would resolve -- the repo has no `flake.lock`, so
-nothing pins either. See the reproducibility note under CI.
+the versions `nix develop` would resolve from `flake.lock`. It is a convenience
+for a machine with no daemon; `nix develop` is the authoritative toolchain.
 
 `tools/build_preview.py` regenerates `index.html` with nothing but `python3`.
 `tools/build.mjs` is the authoritative bundler, phase 2b requires the two to
@@ -154,9 +154,9 @@ What is still **not** verified:
   the browser's touchscreen API is unimplemented in Firefox. Synthetic
   `PointerEvent`s were tried first and proved misleading — they have no active
   pointer id, so they exercise a different path than a finger does.
-- **A pinned toolchain.** There is no `flake.lock`, so `nix develop` re-resolves
-  nixpkgs; CI and a local machine can therefore run different node/Playwright
-  builds, and the goldens only mean identical pixels within one of them.
+- **The lockfile under CI.** `flake.lock` is committed, and the locked nixpkgs
+  rev was verified to fetch, evaluate and build with a daemonless `nix build`,
+  but no CI run has yet executed with it (see CI).
 
 Run `nix develop --command ./check.sh` (or, on a machine where nix cannot reach a
 daemon, `./tools/with-store-toolchain.sh ./check.sh`, which finds a node and
@@ -166,13 +166,15 @@ Playwright already in `/nix/store`) to reproduce.
 
 [`.github/workflows/check.yml`](.github/workflows/check.yml) runs the same toolchain definition and the same `./check.sh` as local development, not a second recipe — a CI that defines "correct" differently from the local shell is a CI that drifts. It additionally builds `packages.default` and requires the result to match the committed `index.html`, because `nix develop` alone never builds the package.
 
-**Reproducibility caveat.** There is no committed `flake.lock`, so `nix build`
-and `nix develop` re-resolve nixpkgs on each run. The artifact check is still
-meaningful because it rebuilds from this checkout inside the same job, so it
-catches a stale or hand-edited `index.html` whatever the toolchain; the weaker
-claim is the golden screenshots, which compare pixels painted by whatever
-Firefox that run resolved. Committing a lockfile (`nix flake lock`) closes the
-gap. It was never generated before 2026-11-04 because the flake did not parse.
+**Pinning.** `flake.lock` is committed, so `nix build` and `nix develop` resolve
+one nixpkgs revision and CI runs the same node, Playwright and Firefox as anyone
+else running the checklist. That is what makes the 8 golden PNGs a meaningful
+cross-machine claim rather than a local one. Two things it does not cover: the
+`with-store-toolchain.sh` shim reads `/nix/store` directly and ignores the lock,
+so it can run a different version (it is a no-daemon fallback, not the authority);
+and a lockfile is a choice, not a freeze -- refresh it deliberately with
+`nix flake update`, re-run `./check.sh`, and regenerate goldens only after
+reviewing the diff.
 
 The workflow has run green on GitHub Actions, and the log was read to confirm the
 phases actually executed rather than skipped: six phases, 46 behavioural
