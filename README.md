@@ -6,6 +6,10 @@ An interactive bench of *stopped flue pipes* — tubes closed at the foot and op
 
 Open [`index.html`](index.html) in any modern browser. It is one self-contained file — no network, no build step, no storage — so it works offline and inside a sandboxed `iframe`.
 
+Try it without cloning: <https://rawcdn.githack.com/dniku/stem/main/index.html>
+(verified byte-identical to `index.html`; that's somebody else's CDN in front of
+this repo, so treat it as a demo path and the file in the repo as the artifact).
+
 ## What you are looking at
 
 A stopped pipe can only hold an **odd** number of quarter-wavelengths, so its pitch is
@@ -74,9 +78,11 @@ nix develop --command ./check.sh --update
 ```
 
 **If `nix` cannot reach a daemon**, `./tools/with-store-toolchain.sh ./check.sh`
-runs the identical pinned toolchain from the paths already in `/nix/store`
+runs the same kind of toolchain from the paths already in `/nix/store`
 (node 22, Playwright 1.64.1, its browsers) with no daemon and no network. It is
-a PATH shim, not a second toolchain: `flake.nix` remains what is pinned.
+a PATH shim over whatever those store paths currently hold, not a guarantee of
+the versions `nix develop` would resolve -- the repo has no `flake.lock`, so
+nothing pins either. See the reproducibility note under CI.
 
 `tools/build_preview.py` regenerates `index.html` with nothing but `python3`.
 `tools/build.mjs` is the authoritative bundler, phase 2b requires the two to
@@ -148,17 +154,37 @@ What is still **not** verified:
   the browser's touchscreen API is unimplemented in Firefox. Synthetic
   `PointerEvent`s were tried first and proved misleading — they have no active
   pointer id, so they exercise a different path than a finger does.
-- **CI and publication**, which have not been run.
+- **A pinned toolchain.** There is no `flake.lock`, so `nix develop` re-resolves
+  nixpkgs; CI and a local machine can therefore run different node/Playwright
+  builds, and the goldens only mean identical pixels within one of them.
 
 Run `nix develop --command ./check.sh` (or, on a machine where nix cannot reach a
-daemon, `./tools/with-store-toolchain.sh ./check.sh`, which finds the same pinned
-toolchain already in `/nix/store`) to reproduce.
+daemon, `./tools/with-store-toolchain.sh ./check.sh`, which finds a node and
+Playwright already in `/nix/store`) to reproduce.
 
 ## CI
 
-[`.github/workflows/check.yml`](.github/workflows/check.yml) runs the same pinned toolchain and the same `./check.sh` as local development, not a second recipe — a CI that defines "correct" differently from the local shell is a CI that drifts. It additionally builds `packages.default` and requires the result to match the committed `index.html`, because `nix develop` alone never builds the package.
+[`.github/workflows/check.yml`](.github/workflows/check.yml) runs the same toolchain definition and the same `./check.sh` as local development, not a second recipe — a CI that defines "correct" differently from the local shell is a CI that drifts. It additionally builds `packages.default` and requires the result to match the committed `index.html`, because `nix develop` alone never builds the package.
 
-*Not yet run:* publication and CI have not been executed, so the workflow above is unverified against GitHub Actions.
+**Reproducibility caveat.** There is no committed `flake.lock`, so `nix build`
+and `nix develop` re-resolve nixpkgs on each run. The artifact check is still
+meaningful because it rebuilds from this checkout inside the same job, so it
+catches a stale or hand-edited `index.html` whatever the toolchain; the weaker
+claim is the golden screenshots, which compare pixels painted by whatever
+Firefox that run resolved. Committing a lockfile (`nix flake lock`) closes the
+gap. It was never generated before 2026-11-04 because the flake did not parse.
+
+The workflow has run green on GitHub Actions, and the log was read to confirm the
+phases actually executed rather than skipped: six phases, 46 behavioural
+assertions, 9 acoustics and 14 interaction tests passing, all 8 Firefox
+goldens, and `nix build` producing an `index.html` whose SHA-256 equals the
+committed one. Green is not evidence that checks ran, so this is a log check,
+not a badge check.
+
+That CI run is also what found the flake bug: `flake.nix` had never parsed
+(missing closing brace on `outputs`), and no local check could see it, because
+every local check goes through a `/nix/store` PATH shim that never asks nix to
+evaluate the flake.
 
 ## Fonts
 
