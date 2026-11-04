@@ -64,17 +64,15 @@ function launchFailureDetail(error) {
 export async function openScene(engines, engineName, scene, url, options = {}) {
   const engine = engines[engineName];
   if (!engine) throw new Error(`this Playwright build does not expose "${engineName}"`);
-  let browser = options.reuseBrowser;
-  if (browser === undefined) {
-    try {
-      const args = engineName === 'chromium' ? ['--autoplay-policy=no-user-gesture-required'] : [];
-      browser = await engine.launch({ args });
-    } catch (error) {
-      throw new Error(`${engineName} could not start${launchFailureDetail(error)}`, { cause: error });
-    }
-  }
+  // A caller may pass its own browser; otherwise the process-wide pool is used.
+  // `ownsBrowser` records which of the two is being used, because only a browser
+  // this call launched may be closed by it.
+  const ownsBrowser = options.browser === undefined;
+  const browser = ownsBrowser
+    ? await launchBrowser(engines, engineName)
+    : options.browser;
   const closeOnFailure = () => {
-    if (options.reuseBrowser === undefined) browser.close().catch(() => {});
+    if (ownsBrowser) browser.close().catch(() => {});
   };
   const context = await browser.newContext({
     viewport: { width: scene.width, height: scene.height },
@@ -114,7 +112,67 @@ export async function openScene(engines, engineName, scene, url, options = {}) {
   if (options.dismissOnboarding !== false) {
     await page.evaluate(() => document.querySelector('#onboarding-close')?.click());
   }
-  return { browser, context, page, problems };
+  return {
+    browser,
+    context,
+    page,
+    problems,
+    /**
+     * Finish with this scene.
+     *
+     * This deliberately releases nothing: `context.close()` silently disconnects
+     * the whole browser here and `browser.close()` costs 30 s, so both are
+     * deferred to closeSharedBrowser() at the end of the run. It exists so call
+     * sites read naturally and so the invariant is stated in one place.
+     */
+    async close() {},
+  };
+}
+
+/*
+ * How to drive a browser in this container, measured rather than assumed.
+ *
+ * Every number below is from Playwright 1.64.1 and Firefox 157 on this machine;
+ * they are not general truths about Playwright and should be re-measured if the
+ * toolchain moves.
+ *
+ *   browser.close()            30.0 s, for about:blank as much as for the app
+ *   context.close()             0.0 s — and it takes the browser down with it
+ *   newPage + goto + ready      0.4 s, repeated indefinitely on one context
+ *   launch                      0.6 s
+ *
+ * So the only shape that is both correct and quick is: launch one browser, open
+ * one context per scene, and *never* close a context or a browser mid-run.
+ * Closing a context is free but fatal (it disconnects the browser), and closing a
+ * browser is survivable but costs 30 s, so both happen once, at teardown.
+ *
+ * Isolation is not lost by keeping a context: every scene gets its own context
+ * anyway (viewport, isMobile, hasTouch and locale differ), and each case loads a
+ * fresh document. What is shared is the browser process, which holds no app state.
+ */
+let shared = null;
+
+async function launchBrowser(engines, engineName) {
+  if (shared && shared.name === engineName) return shared.browser;
+  if (shared) await shared.browser.close().catch(() => {});
+  const engine = engines[engineName];
+  const args = engineName === 'chromium' ? ['--autoplay-policy=no-user-gesture-required'] : [];
+  let browser;
+  try {
+    browser = await engine.launch({ args });
+  } catch (error) {
+    throw new Error(`${engineName} could not start${launchFailureDetail(error)}`, { cause: error });
+  }
+  shared = { browser, name: engineName };
+  return browser;
+}
+
+/** Close the pooled browser. Call once, from a test runner's teardown. */
+export async function closeSharedBrowser() {
+  if (!shared) return;
+  const { browser } = shared;
+  shared = null;
+  await browser.close().catch(() => {});
 }
 
 /**
@@ -183,6 +241,35 @@ export async function releaseTouch(page) {
       pointerId: 9, pointerType: 'touch', isPrimary: true, buttons: 0, bubbles: true,
     }));
   });
+}
+
+/**
+ * Drag with the browser's own input pipeline rather than synthetic events.
+ *
+ * Synthetic PointerEvents are convenient but they are not pointers: they have no
+ * active pointer id, so `setPointerCapture` rejects them, and a page that ignores
+ * that failure silently does nothing. Where a test's whole point is "a person
+ * grabs this and drags", drive the real thing -- `page.mouse` produces trusted
+ * events that go through hit testing, capture and hover state exactly as a touch
+ * does. Use this for gestures whose correctness depends on which element the
+ * press lands on; the synthetic helpers remain useful for bulk motion.
+ */
+export async function dragBenchWithMouse(page, from, to, samples = 12) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let index = 1; index <= samples; index += 1) {
+    const t = index / samples;
+    await page.mouse.move(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+  }
+  await page.mouse.up();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+}
+
+/** Press and hold with real input, so a note is sounding when captured. */
+export async function holdWithMouse(page, point) {
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 }
 
 /**

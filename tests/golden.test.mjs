@@ -22,7 +22,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import zlib from 'node:zlib';
 
-import { loadPlaywright, openScene, dragBench, touchAndHold, stepFrames, SCENES, DEFAULT_ENGINE } from '../tools/browser.mjs';
+import { loadPlaywright, openScene, closeSharedBrowser, dragBench, touchAndHold, stepFrames, SCENES, DEFAULT_ENGINE } from '../tools/browser.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ARTIFACT = pathToFileURL(resolve(ROOT, 'index.html')).href;
@@ -234,7 +234,7 @@ function differenceRatio(a, b) {
 async function captureCase(engines, testCase) {
   const scene = SCENES.find((candidate) => candidate.name === testCase.scene);
   if (!scene) throw new Error(`unknown scene ${testCase.scene}`);
-  const { browser, page, problems } = await openScene(engines, ENGINE, scene, ARTIFACT, {
+  const { page, problems, close } = await openScene(engines, ENGINE, scene, ARTIFACT, {
     dismissOnboarding: testCase.dismissOnboarding !== false,
   });
   try {
@@ -258,7 +258,8 @@ async function captureCase(engines, testCase) {
     const image = await page.screenshot({ type: 'png' });
     return { image, state, problems };
   } finally {
-    await browser.close();
+    // Releases the context only; the browser is shared and closed at the end.
+    await close();
   }
 }
 
@@ -299,6 +300,8 @@ async function main() {
       process.stdout.write(`ok  ${label}  identical-to-baseline=${ratio === 0} hash=${hash}\n`);
     }
   }
+
+  await closeSharedBrowser();
 
   if (written.length > 0) {
     process.stdout.write(`\nWrote ${written.length} baseline(s). View every one before accepting:\n`);

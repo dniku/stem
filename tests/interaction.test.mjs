@@ -13,7 +13,7 @@ import { test, before, after } from 'node:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { loadPlaywright, openScene, dragBench, touchAndHold, releaseTouch, SCENES, DEFAULT_ENGINE } from '../tools/browser.mjs';
+import { loadPlaywright, openScene, closeSharedBrowser, dragBench, dragBenchWithMouse, holdWithMouse, touchAndHold, releaseTouch, stepFrames, SCENES, DEFAULT_ENGINE } from '../tools/browser.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ARTIFACT = pathToFileURL(resolve(ROOT, 'index.html')).href;
@@ -39,15 +39,25 @@ before(async () => {
 });
 
 after(async () => {
-  if (opened) await opened.browser.close();
+  if (opened) await opened.close();
+  // One browser for the whole run, closed once: browser.close() costs 30 s in
+  // this container, so closing per case is what made this suite look hung.
+  await closeSharedBrowser();
 });
 
-/** Open the artifact once per process and hand back a fresh page each time. */
+/**
+ * A fresh page on the one shared browser.
+ *
+ * The previous shape closed the browser between cases, and `browser.close()`
+ * costs 30 s whatever the page is in this container -- fourteen cases meant seven
+ * minutes of waiting and a suite that looked hung. A new context already gives a
+ * new document, viewport and storage, which is all a case needs to be isolated.
+ */
 async function freshPage() {
-  if (opened) await opened.browser.close();
-  opened = await openScene(engines, ENGINE, SCENE, ARTIFACT);
-  assert.deepEqual(opened.problems, [], `page reported problems: ${opened.problems.join('; ')}`);
-  return opened;
+  const scene = await openScene(engines, ENGINE, SCENE, ARTIFACT);
+  assert.deepEqual(scene.problems, [], `page reported problems: ${scene.problems.join('; ')}`);
+  opened = scene;
+  return scene;
 }
 
 test('the page boots, declares readiness, and reports no console errors', async () => {
@@ -89,12 +99,15 @@ test('dragging up from the block cuts a pipe whose pitch follows c/4L', async ()
 test('touching a pipe puts it in the sounding set and the status says what it is', async () => {
   const { page } = await freshPage();
   const anchors = await page.evaluate(() => window.__stem.anchors());
-  await touchAndHold(page, anchors.pipes[0].middle);
+  // Real input, and one frame: the status line is published by the render loop,
+  // so reading the DOM in the same tick as the press would see the old message.
+  await holdWithMouse(page, anchors.pipes[0].middle);
+  await stepFrames(page, 1);
   const state = await page.evaluate(() => ({
     sounding: window.__stem.view.sounding.size,
     status: document.querySelector('#status').textContent,
   }));
-  await releaseTouch(page);
+  await page.mouse.up();
   assert.equal(state.sounding, 1, 'holding a pipe should make exactly one pipe sound');
   assert.match(state.status, /Blowing .*Hz/, `status read: ${state.status}`);
 });
@@ -125,10 +138,11 @@ test('dragging across the mouth moves the windhole and changes the tone colour',
   const { page } = await freshPage();
   const anchors = await page.evaluate(() => window.__stem.anchors());
   const target = anchors.pipes[0];
-  // Move the mouth down the pipe: the grab point must track the mouth, which
-  // moves as it is dragged, so this ends at a fixed screen position below it.
-  const to = { x: target.mouth.x, y: target.mouth.y + 90 };
-  await dragBench(page, target.mouth, to, 10);
+  // Aim at the end of the brass lip as it is drawn -- past the bore's edge -- and
+  // drag down the pipe. Real input, because whether the press lands on the lip or
+  // on the pipe body is precisely what is under test.
+  const start = { x: target.mouth.x + target.widthPx / 2 + 7, y: target.mouth.y };
+  await dragBenchWithMouse(page, start, { x: start.x, y: start.y + 90 }, 10);
   const after = await page.evaluate(() => {
     const pipe = window.__stem.organ.pipes[0];
     return { footprint: pipe.footprint, third: pipe.partialAmplitudes(3)[2] };
@@ -214,8 +228,7 @@ test('tune-lock off lets a pipe sit off a semitone', async () => {
 
 test('the layout keeps the block and the labels on screen in every scene', async () => {
   for (const scene of SCENES) {
-    const { page, browser } = await openScene(engines, ENGINE, scene, ARTIFACT, { reuseBrowser: undefined });
-    await browser.close();
+    const { page, close: sceneClose } = await openScene(engines, ENGINE, scene, ARTIFACT);
     const box = await page.evaluate(() => {
       const anchors = window.__stem.anchors();
       return {
@@ -229,6 +242,7 @@ test('the layout keeps the block and the labels on screen in every scene', async
     for (const topY of box.pipes) {
       assert.ok(topY >= 0, `${scene.name}: a pipe label is clipped above the viewport (topY=${topY})`);
     }
+    await sceneClose();
   }
 });
 
@@ -249,7 +263,7 @@ test('the explanation overlay never takes height from the bench', async () => {
       height: window.__stem.anchors().height,
       blockY: window.__stem.layout.blockY,
     }));
-    await closed.browser.close();
+    await closed.close();
 
     const open = await openScene(engines, ENGINE, scene, ARTIFACT);
     await open.page.click('#help-toggle');
@@ -258,7 +272,7 @@ test('the explanation overlay never takes height from the bench', async () => {
       blockY: window.__stem.layout.blockY,
       sheetVisible: !document.querySelector('#onboarding').hasAttribute('hidden'),
     }));
-    await open.browser.close();
+    await open.close();
 
     assert.ok(openBox.sheetVisible, `${scene.name}: Help did not open the explanation`);
     // Same canvas height, same block position: the sheet is an overlay.
@@ -269,7 +283,7 @@ test('the explanation overlay never takes height from the bench', async () => {
 
 test('the controls stay on screen when the explanation opens and closes', async () => {
   for (const scene of SCENES) {
-    const { page, browser } = await openScene(engines, ENGINE, scene, ARTIFACT);
+    const { page, close: sceneClose } = await openScene(engines, ENGINE, scene, ARTIFACT);
     for (const id of ['#temperature', '#snap', '#reset', '#help-toggle']) {
       const before = await page.isVisible(id);
       assert.ok(before, `${scene.name}: ${id} is not visible to start with`);
@@ -280,12 +294,12 @@ test('the controls stay on screen when the explanation opens and closes', async 
       const after = await page.isVisible(id);
       assert.ok(after, `${scene.name}: ${id} disappeared after opening and closing the explanation`);
     }
-    await browser.close();
+    await sceneClose();
   }
 });
 
 test('the gesture legend stays visible and lets drags through to the bench', async () => {
-  const { page, browser } = await openScene(engines, ENGINE, SCENES[0], ARTIFACT);
+  const { page, close: sceneClose } = await openScene(engines, ENGINE, SCENES[0], ARTIFACT);
   await page.evaluate(() => document.querySelector('#onboarding').setAttribute('hidden', ''));
   assert.ok(await page.isVisible('#legend'), 'the reminders vanished once onboarding was dismissed');
 
@@ -299,14 +313,14 @@ test('the gesture legend stays visible and lets drags through to the bench', asy
   });
   assert.equal(hit.tag, 'CANVAS', `the legend swallows presses (${hit.tag} got the press)`);
   assert.equal(hit.passThrough, 'none', 'the legend should be pointer-transparent');
-  await browser.close();
+  await sceneClose();
 });
 
 test('cutting still works on a phone with the explanation open', async () => {
   // The regression in its plainest form: on a portrait phone the sheet covered
   // the block, so the first gesture a new visitor makes did nothing.
   const scene = SCENES[1];
-  const { page, browser } = await openScene(engines, ENGINE, scene, ARTIFACT);
+  const { page, close: sceneClose } = await openScene(engines, ENGINE, scene, ARTIFACT);
   const before = await page.evaluate(() => window.__stem.organ.pipes.length);
   const anchors = await page.evaluate(() => window.__stem.anchors());
   const from = { x: anchors.empty.x, y: anchors.blockY - 6 };
@@ -314,5 +328,5 @@ test('cutting still works on a phone with the explanation open', async () => {
   await dragBench(page, from, to, 10);
   const after = await page.evaluate(() => window.__stem.organ.pipes.length);
   assert.ok(after > before, `dragging from the block cut nothing (${before} -> ${after} pipes)`);
-  await browser.close();
+  await sceneClose();
 });
