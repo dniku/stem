@@ -169,6 +169,17 @@ html, body {
   pointer-events: auto;
   overflow-y: auto;
   max-height: 100%;
+  /*
+   * Fade the last lines out at the scroll edge. A sheet that ends mid-sentence
+   * with no scrollbar (Firefox uses overlay scrollbars) reads as an explanation
+   * that was cut short, and people stop reading instead of scrolling. The
+   * gradient is painted under the padding box, so it only shows where content
+   * remains below.
+   */
+  background:
+    linear-gradient(#101a29 30%, rgba(16, 26, 41, 0)) bottom / 100% 26px no-repeat,
+    #101a29;
+  mask: linear-gradient(#000 0 calc(100% - 22px), rgba(0, 0, 0, 0.55) 100%);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   /* Fully opaque: the sheet sits over the bench, and a translucent card
@@ -353,9 +364,16 @@ input[type="range"] {
   /* The sheet comes up from the bottom edge on a phone, where a right-hand card
      would sit under the thumb of whoever is holding it. It stays an overlay, and
      #panel keeps pointer-events: none, so the block under it still drags. */
-  #panel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; }
+  /*
+   * top: 0, not `top: auto`. `auto` would keep the desktop rule's offset, and
+   * because #panel is absolutely positioned against #stage -- which starts below
+   * the masthead -- that offset put the sheet's own top edge above the stage and
+   * over the title, clipping the heading it opens with. Anchoring to 0 keeps the
+   * sheet inside the canvas row it belongs to.
+   */
+  #panel { top: 0; left: 0; right: 0; bottom: 0; width: 100%; }
   #onboarding {
-    max-height: 78vh;
+    max-height: 100%;
     border-radius: var(--radius) var(--radius) 0 0;
     border-left: 0;
     border-right: 0;
