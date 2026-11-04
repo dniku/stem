@@ -725,6 +725,11 @@ function seedRack() {
   app.lastTap = { pipe: null, at: 0 };
 }
 
+/**
+ * The status line. Kept in one place so what the app says is derived from state
+ * rather than scattered across the handlers, which is how a status line ends up
+ * describing something the app no longer does.
+ */
 function syncControls() {
   const temperature = document.querySelector('#temperature');
   const temperatureValue = document.querySelector('#temperature-value');
@@ -743,6 +748,11 @@ function syncControls() {
         'numbers carry everything. The pitches shown are still the real ones.';
     } else if (state === 'not-started' || state === 'suspended') {
       audioNote.textContent = 'Sound starts the moment you first touch the bench.';
+    } else if (app.audio.refused) {
+      // The polyphony budget is real, so say when it bites: otherwise a note
+      // that silently does not sound looks like a fault in the instrument.
+      audioNote.textContent = `That was the ${app.audio.voices.size + 1}th pipe at once, past ` +
+        'the six voices this instrument keeps clean. Let one finish first.';
     } else {
       audioNote.textContent = '';
     }

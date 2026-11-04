@@ -14,6 +14,17 @@
  * are in so the UI can say so rather than looking broken.
  */
 
+/**
+ * Amplitude of one pipe's summed partials, and how many voices are allowed.
+ *
+ * Each voice peaks at PARTIAL_PEAK after normalisation, so N voices at the worst
+ * in-phase moment reach N * PARTIAL_PEAK * MASTER_GAIN. Keeping that under 1.0
+ * is the whole clipping story: 6 * 0.16 * 0.9 = 0.864.
+ */
+const PARTIAL_PEAK = 0.16;
+const MASTER_GAIN = 0.9;
+const MAX_VOICES = 6;
+
 /** Why there is no sound, if there is no sound. */
 const AudioState = {
   NotStarted: 'not-started',
@@ -53,7 +64,7 @@ class AudioEngine {
       if (!Ctor) throw new Error('no AudioContext constructor');
       this.context = new Ctor();
       this.master = this.context.createGain();
-      this.master.gain.value = 0.9;
+      this.master.gain.value = MASTER_GAIN;
       this.analyser = this.context.createAnalyser();
       // A small FFT keeps the level meter cheap; 256 bins is plenty for a bar.
       this.analyser.fftSize = 256;
@@ -91,6 +102,13 @@ class AudioEngine {
     const now = this.context.currentTime;
     const frequency = pipe.frequencyHz(organ.temperatureC);
     let voice = this.voices.get(id);
+    if (voice === undefined && this.voices.size >= MAX_VOICES) {
+      // A seventh voice at the worst in-phase moment would clip everything, so
+      // the newest note is refused. The count is left on `refused` for the UI to
+      // say so: a silent limit reads as a broken key, not as a polyphony budget.
+      this.refused = (this.refused ?? 0) + 1;
+      return;
+    }
     if (voice) {
       // Retune smoothly. A jump here would click, and a click on a slider drag
       // is the difference between an instrument and a broken speaker.
@@ -116,9 +134,13 @@ class AudioEngine {
       oscillator.stemRatio = index + 1;
       oscillator.frequency.value = frequency * oscillator.stemRatio;
       const partial = this.context.createGain();
-      // 0.16 peak partial gain: with eight pipes going at once the sum stays
-      // under the clipping threshold without a limiter doing the damage.
-      partial.gain.value = (amplitude / total) * 0.16;
+      // Per-pipe peak is exactly PARTIAL_PEAK: dividing by the sum of partials
+      // normalises each voice to that amplitude whatever its colour, which is
+      // what makes the headroom calculation below depend only on the number of
+      // voices. With PARTIAL_PEAK at 0.16 and master at 0.9, worst-case in-phase
+      // summation clips at about 7 voices, so MAX_VOICES caps below that rather
+      // than trusting nobody will stack that many.
+      partial.gain.value = (amplitude / total) * PARTIAL_PEAK;
       oscillator.connect(partial).connect(envelope);
       oscillator.start();
       oscillators.push(oscillator);
