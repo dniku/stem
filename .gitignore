@@ -8,3 +8,4 @@ result-*
 # reads that and must not need font tooling or network. The raw .woff2 is the
 # same bytes in another encoding and adds nothing to review.
 build/*.woff2
+__pycache__/

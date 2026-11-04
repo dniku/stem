@@ -102,9 +102,27 @@ class Bench:
     def __post_init__(self) -> None:
         self.block_y = self.height - max(42, min(72, self.height * 0.09))
         self.usable_height_px = self.block_y - max(72, self.height * 0.12)
-        self.pipe_gap = max(10, min(26, self.width / 42))
-        self.first_pipe_x = max(18, self.width * 0.03)
+        self.pipe_gap = max(12, min(30, self.width / 34))
+        self.row_margin_px = 18.0
+        self.row_scale = 1.0
         self.update_scale()
+        self.layout_row()
+
+    def layout_row(self) -> None:
+        """Centre the row. Called after the rack changes, as computeLayout is."""
+        self.first_pipe_x = max(self.row_margin_px, (self.width - self.rack_width_px()) / 2)
+
+    def rack_width_px(self) -> float:
+        """Fitted width of the row; sets row_scale, as rackWidthPx() does."""
+        count = len(self.organ.pipes)
+        if count == 0:
+            self.row_scale = 1.0
+            return 0.0
+        natural = (sum(self.natural_width_px(p) for p in self.organ.pipes)
+                   + (count - 1) * self.pipe_gap)  # gaps enter unscaled, then scale
+        available = max(0.0, self.width - 2 * self.row_margin_px)
+        self.row_scale = available / natural if natural > available else 1.0
+        return natural * self.row_scale
 
     #: How much length the bench shows at full height. Fixed per viewport -- the
     #: scale must not depend on the content, or drag length and view scale feed
@@ -114,16 +132,27 @@ class Bench:
     def update_scale(self) -> None:
         self.px_per_m = self.usable_height_px / self.VIEW_SPAN_M
 
+    #: Drawn width, mirroring LAYOUT in src/app.js: base plus an amplified share
+    #: of the true bore, floored at the touch target. See pipeWidthPx() there.
+    BASE_PIPE_WIDTH_PX = 48.0
+    BORE_VISUAL_GAIN = 1.6
+
+    def natural_width_px(self, pipe: Pipe) -> float:
+        true_width_px = pipe.radius_m * 2 * self.px_per_m
+        return max(MIN_PIPE_WIDTH_PX,
+                   self.BASE_PIPE_WIDTH_PX + true_width_px * self.BORE_VISUAL_GAIN)
+
     def pipe_width_px(self, pipe: Pipe) -> float:
-        return max(MIN_PIPE_WIDTH_PX, pipe.radius_m * 2 * self.px_per_m)
+        return self.natural_width_px(pipe) * self.row_scale
 
     def pipe_center_x(self, index: int) -> float:
         pipe = self.organ.pipes[index]
         if pipe.anchor_x is not None:
             return pipe.anchor_x
         x = self.first_pipe_x
+        gap = self.pipe_gap * self.row_scale
         for earlier in self.organ.pipes[:index]:
-            x += self.pipe_width_px(earlier) + self.pipe_gap
+            x += self.pipe_width_px(earlier) + gap
         return x + self.pipe_width_px(pipe) / 2
 
     def pipe_height_px(self, pipe: Pipe) -> float:
@@ -250,6 +279,11 @@ def check_source_contract() -> list[str]:
     expect(r"for \(let index = app\.organ\.pipes\.length - 1; index >= 0; index -= 1\)", "topmost-first hit test")
     expect(r"halfWidth \+ 10", "mouth tab grab reach")
     expect(r"minPipeWidthPx: 26", "min touch width")
+    expect(r"basePipeWidthPx: 48", "base drawn pipe width")
+    expect(r"boreVisualGain: 1\.6", "bore visual gain")
+    expect(r"LAYOUT\.basePipeWidthPx \+ trueWidthPx \* LAYOUT\.boreVisualGain", "pipe width rule")
+    expect(r"pipeGap = Math\.max\(12, Math\.min\(30, width / 34\)\)", "pipe gap")
+    expect(r"\(width - rackWidthPx\(\)\) / 2", "rack is centred")
     expect(r"minCutM: 0\.05", "minimum cut length")
     expect(r"mouthBandPx = 18", "mouth hit band")
     expect(r"overblowThresholdPx = 90", "overblow threshold")
@@ -258,6 +292,7 @@ def check_source_contract() -> list[str]:
     expect(r"MAX_RADIUS_M = 0\.05", "max radius")
     expect(r"0\.6 \* this\.radiusM", "end correction 0.6r", acoustics_js)
     expect(r"331\.3 \* Math\.sqrt\(1 \+ temperatureC / 273\.15\)", "sound speed formula", acoustics_js)
+    expect(r"return Math\.cos\(\(k \* Math\.PI \* sample\) / 2\)", "standing wave is pressure (cos)")
     return problems
 
 
@@ -284,6 +319,7 @@ def seeded(width: int, height: int) -> Bench:
         bench.organ.snap_pipe(pipe)
         bench.organ.pipes.append(pipe)
     bench.update_scale()
+    bench.layout_row()
     return bench
 
 
@@ -529,6 +565,31 @@ def main() -> int:
                   if phone.hit_test(round(390 * f / 50 * 50 / 50), phone.block_y - 10)[0] == "none"), None)
     check("there is somewhere on the portrait block to start a cut",
           any(phone.hit_test(round(390 * f), phone.block_y - 10)[0] == "none" for f in [i / 100 for i in range(5, 96)]))
+
+    print("\n== many pipes on a narrow screen ==")
+    # Centring is clamped so a row can never start off the left edge, but a rack
+    # wide enough still overflows the right. Assert what the app guarantees, and
+    # state the limit rather than pretending it is not there.
+    crowded = seeded(390, 844)
+    crowded.organ.snapped = False
+    for _ in range(12):
+        crowded.organ.pipes.append(Pipe(length_m=0.2, radius_m=0.006))
+    crowded.update_scale()
+    crowded.layout_row()
+    row = crowded.rack_width_px()
+    overflow = crowded.first_pipe_x + row - crowded.width
+    print(f"  15 pipes: row {row:.0f}px on a {crowded.width}px bench, overflow {overflow:.0f}px")
+    check("a crowded rack never starts off the left edge", crowded.first_pipe_x >= 18,
+          f"firstPipeX {crowded.first_pipe_x:.0f}")
+    check("a crowded rack shrinks to fit rather than spilling off the right",
+          overflow <= 1.0, f"overflow {overflow:.0f}px")
+    rightmost = max(crowded.pipe_center_x(i) + crowded.pipe_width_px(p) / 2
+                    for i, p in enumerate(crowded.organ.pipes))
+    check("every pipe in a 15-pipe rack is inside the screen",
+          rightmost <= crowded.width, f"rightmost edge at {rightmost:.0f} of {crowded.width}")
+    check("shrinking keeps the bores' proportions",
+          abs(crowded.pipe_width_px(crowded.organ.pipes[0]) / crowded.pipe_width_px(crowded.organ.pipes[-1])
+              - crowded.natural_width_px(crowded.organ.pipes[0]) / crowded.natural_width_px(crowded.organ.pipes[-1])) < 1e-9)
 
     print("\n== phone landscape ==")
     landscape = seeded(844, 390)

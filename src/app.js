@@ -29,8 +29,26 @@ const LAYOUT = {
   firstPipeX: 0,
   /** Comfortable touch target: narrower than this and a thumb misses the pipe. */
   minPipeWidthPx: 26,
+  /**
+   * Base drawn pipe width, and how strongly a real bore shows on top of it.
+   *
+   * Measured by rendering the opening rack at the three target viewports and
+   * looking at the result: a smaller base left the standing wave unreadable and
+   * the three pipes too close in width to tell apart, while a larger gain drew
+   * bins rather than pipes. These put the three-pipe row at about two thirds of
+   * a portrait phone with each wave legible inside its own pipe.
+   */
+  basePipeWidthPx: 48,
+  boreVisualGain: 1.6,
   /** A cut shorter than this is a tap, not a pipe. */
   minCutM: 0.05,
+  /**
+   * Shrink factor applied to every drawn pipe width so a long rack fits the
+   * bench. 1 whenever the row fits; recomputed by rackWidthPx().
+   */
+  rowScale: 1,
+  /** Air kept either side of a centred row, in px. */
+  rowMarginPx: 18,
   /**
    * How much pipe length the bench shows at full height, in metres, and the
    * scale that follows from it. Fixed for a given viewport; see updateScale().
@@ -78,9 +96,39 @@ function computeLayout(width, height) {
   // The space a full-height pipe occupies: from the block up to the reserve that
   // holds the label of the tallest pipe.
   LAYOUT.usableHeightPx = LAYOUT.blockY - Math.max(72, height * 0.12);
-  LAYOUT.pipeGap = Math.max(10, Math.min(26, width / 42));
-  LAYOUT.firstPipeX = Math.max(18, width * 0.03);
+  LAYOUT.pipeGap = Math.max(12, Math.min(30, width / 34));
   updateScale();
+  // Centre the row on its fitted width. Packing it against the left edge left
+  // five sixths of a desktop empty and made a three-pipe rack read as a fragment.
+  LAYOUT.firstPipeX = Math.max(LAYOUT.rowMarginPx, (width - rackWidthPx()) / 2);
+}
+
+/** The row's width before fitting: unscaled gaps plus each pipe's natural width. */
+function naturalRackPx() {
+  const gaps = (app.organ.pipes.length - 1) * LAYOUT.pipeGap;
+  const widths = app.organ.pipes.reduce(
+    (total, pipe) => total + naturalPipeWidthPx(pipe),
+    0,
+  );
+  return gaps + widths;
+}
+
+/**
+ * Total width of the row of pipes, gaps included, after any shrink needed to fit.
+ *
+ * Drawn widths are presentation, so when a rack is wide enough to overflow the
+ * bench the whole row is scaled down together: bores keep their proportions, and
+ * only the exaggeration is reduced. Without this, a dozen pipes spill off the
+ * right-hand edge and a phone user cannot reach or see the newest ones.
+ */
+function rackWidthPx() {
+  const count = app.organ.pipes.length;
+  if (count === 0) return 0;
+  const natural = (count - 1) * LAYOUT.pipeGap + naturalRackPx();
+  // Leave a margin so the row is never flush against both edges.
+  const available = Math.max(0, LAYOUT.width - 2 * LAYOUT.rowMarginPx);
+  LAYOUT.rowScale = natural > available ? available / natural : 1;
+  return natural * LAYOUT.rowScale;
 }
 
 /**
@@ -103,9 +151,28 @@ function updateScale() {
   LAYOUT.pxPerM = LAYOUT.usableHeightPx / LAYOUT.viewSpanM;
 }
 
-/** Width in px that a pipe's bore is drawn at, with a touch-friendly floor. */
+/**
+ * Width in px that a pipe's bore is drawn at.
+ *
+ * Deliberately not the true bore scaled. A 12 mm-radius pipe is a hairline at
+ * any scale where the whole instrument fits, and a wave drawn inside a hairline
+ * is not a wave: the drawn width is a base plus the true width times a gain, so
+ * the *differences* between bores stay honest and visible, which is what the
+ * bore gesture is about, while every pipe is wide enough to show its own wave.
+ * The label states the real diameter and the pitch uses the real radius, so no
+ * physics is inflated. The constants are measured, not guessed: see LAYOUT.
+ */
+function naturalPipeWidthPx(pipe) {
+  const trueWidthPx = pipe.radiusM * 2 * LAYOUT.pxPerM;
+  return Math.max(
+    LAYOUT.minPipeWidthPx,
+    LAYOUT.basePipeWidthPx + trueWidthPx * LAYOUT.boreVisualGain,
+  );
+}
+
+/** The width actually drawn and hit-tested: the natural width, fitted to the bench. */
 function pipeWidthPx(pipe) {
-  return Math.max(LAYOUT.minPipeWidthPx, pipe.radiusM * 2 * LAYOUT.pxPerM);
+  return naturalPipeWidthPx(pipe) * LAYOUT.rowScale;
 }
 
 /**
@@ -119,11 +186,13 @@ function pipeWidthPx(pipe) {
 function pipeCenterX(index) {
   const pipe = app.organ.pipes[index];
   if (pipe.anchorX !== undefined) return pipe.anchorX;
+  // Walk the same fitted widths and the same fitted gap that rackWidthPx() added
+  // up. Deriving the position from one model is what keeps the row from drifting
+  // past the edge the fit was supposed to keep it inside.
+  const gap = LAYOUT.pipeGap * LAYOUT.rowScale;
   let x = LAYOUT.firstPipeX;
   for (let i = 0; i < index; i += 1) {
-    const earlier = app.organ.pipes[i];
-    x += pipeWidthPx(earlier) + LAYOUT.pipeGap;
-    if (earlier.anchorX !== undefined) x = Math.max(x, 0);
+    x += pipeWidthPx(app.organ.pipes[i]) + gap;
   }
   return x + pipeWidthPx(pipe) / 2;
 }
@@ -444,17 +513,22 @@ function pointerUp(pointerId) {
 // ---------------------------------------------------------------------------
 
 /**
- * The standing wave inside one pipe, as a function of position.
+ * The pressure standing wave inside one pipe, as a function of position.
  *
- * A stopped pipe has a displacement node at the closed foot and an antinode at
- * the open mouth. For register n the wavenumber is k = 2n - 1 quarter-waves, so
- * the shape is sin(k * pi/2 * s) with s = 0 at the foot. Drawing the actual
- * function rather than a decorative squiggle is what lets a user see *why* the
- * second register is a twelfth: the wave simply cannot fit any other way.
+ * s runs 0 at the closed foot to 1 at the open mouth, and register n holds
+ * k = 2n - 1 quarter wavelengths, so the shape is cos(k * pi/2 * s).
+ *
+ * Pressure is drawn rather than displacement, and that choice is load-bearing
+ * for the moment the instrument exists to teach. Displacement is sin(k*pi/2*s):
+ * it is zero at the foot, so the first thing a displacement plot does on going
+ * from register 1 to register 2 is stay invisible at the bottom while the pitch
+ * jumps a twelfth. Pressure is cos(): a full antinode at the closed foot and a
+ * node at the mouth, which is the real boundary condition, and the new node
+ * appears where the eye already is. Found by rendering both and looking.
  */
 function standingWave(pipe, sample) {
   const k = 2 * pipe.register - 1;
-  return Math.sin((k * Math.PI * sample) / 2);
+  return Math.cos((k * Math.PI * sample) / 2);
 }
 
 /**
@@ -785,6 +859,9 @@ function serviceVoices() {
 
 function render() {
   serviceVoices();
+  // Keep the row fitted: adding or deleting a pipe changes how much width the
+  // rack needs, and the layout only recomputes itself on resize otherwise.
+  LAYOUT.firstPipeX = Math.max(LAYOUT.rowMarginPx, (LAYOUT.width - rackWidthPx()) / 2);
   if (app.context) drawScene(app.context);
   syncControls();
 }
