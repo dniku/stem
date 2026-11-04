@@ -89,13 +89,35 @@ const app = {
  * landscape alike: it is the one arrangement that keeps the tallest pipe, its
  * label, and the controls on screen at the same time.
  */
+/**
+ * How far down the canvas the gesture legend reaches, in canvas coordinates.
+ *
+ * The legend is DOM, the bench is canvas, and the legend overlays the top of the
+ * canvas, so the only honest way to keep the tallest pipe's label out of it is to
+ * ask the legend where it actually ends. It is pointer-transparent, so it is not
+ * stealing input from anywhere -- it only claims the picture.
+ */
+function legendBottomPx() {
+  const legend = document.querySelector('#legend');
+  const canvas = app.canvas;
+  if (!legend || !canvas || legend.hidden) return 0;
+  const legendBox = legend.getBoundingClientRect();
+  if (legendBox.height === 0) return 0;
+  const canvasBox = canvas.getBoundingClientRect();
+  return Math.max(0, legendBox.bottom - canvasBox.top);
+}
+
 function computeLayout(width, height) {
   LAYOUT.width = width;
   LAYOUT.height = height;
   LAYOUT.blockY = height - Math.max(42, Math.min(72, height * 0.09));
-  // The space a full-height pipe occupies: from the block up to the reserve that
-  // holds the label of the tallest pipe.
-  LAYOUT.usableHeightPx = LAYOUT.blockY - Math.max(72, height * 0.12);
+  // The reserve at the top of the canvas holds each pipe's label, and must clear
+  // the gesture legend that overlays the same strip. Deriving it from the legend's
+  // measured box is what keeps the two apart: a fixed reserve read as enough until
+  // the reminders were reworded, and then the legend sat on top of the tallest
+  // pipe's note name.
+  const labelReservePx = Math.max(72, height * 0.12, legendBottomPx());
+  LAYOUT.usableHeightPx = LAYOUT.blockY - labelReservePx;
   LAYOUT.pipeGap = Math.max(12, Math.min(30, width / 34));
   updateScale();
   // Centre the row on its fitted width. Packing it against the left edge left
@@ -252,12 +274,18 @@ function hitTest(x, y) {
     const topY = LAYOUT.blockY - pipeHeightPx(pipe);
     if (x < centerX - halfWidth - 8 || x > centerX + halfWidth + 8) continue;
     if (y < topY - 10 || y > LAYOUT.blockY + 8) continue;
-    // The mouth is grabbed by the tab that sticks out past the pipe's edge, not
+    // The mouth is grabbed by the lip that sticks out past the pipe's edge, not
     // by a band across the whole bore. A band would swallow the middle of every
     // pipe -- the mouth sits at 50% by default -- and the body gesture, which is
     // the one you need in order to overblow, would be unreachable.
-    const grabFromEdge = halfWidth + 10;
-    if (Math.abs(x - centerX) > grabFromEdge - 8 && Math.abs(y - mouthY(pipe)) <= mouthBandPx) {
+    //
+    // The reachable span is the tab as drawn (MOUTH_TAB_OVERHANG_PX on each
+    // side), so aim at the brass lip and it is the brass lip you grab. Accepting
+    // only a narrow ring inside it left the middle of the handle inert, which is
+    // the sort of thing that reads as "this control does nothing".
+    const outsideTheBore = Math.abs(x - centerX) > halfWidth;
+    const withinTheTab = Math.abs(x - centerX) <= halfWidth + MOUTH_TAB_OVERHANG_PX;
+    if (outsideTheBore && withinTheTab && Math.abs(y - mouthY(pipe)) <= mouthBandPx) {
       return { kind: 'mouth', index, pipe, centerX };
     }
     return { kind: 'pipe', index, pipe, centerX };
@@ -344,6 +372,13 @@ function announceTemperature() {
 // ---------------------------------------------------------------------------
 // Gestures
 // ---------------------------------------------------------------------------
+
+/**
+ * How far the brass lip is drawn past the bore, in CSS pixels. One number for
+ * the shape and for the grab: the tab is drawn this wide and is grabbable this
+ * wide, so the affordance and the hit box cannot drift apart.
+ */
+const MOUTH_TAB_OVERHANG_PX = 11;
 
 /**
  * What a pointer going down means: one hit test, three outcomes.
@@ -641,7 +676,7 @@ function drawStandingWave(context, pipe, centerX, widthPx, heightPx, sounding) {
  */
 function drawMouth(context, pipe, centerX, widthPx, sounding) {
   const y = mouthY(pipe);
-  const tabWidth = widthPx + 22;
+  const tabWidth = widthPx + MOUTH_TAB_OVERHANG_PX * 2;
   // A raised lip wider than the bore, with the windhole itself as the dark slot
   // in the middle: it reads as a handle sticking out either side, which is what
   // the hit test actually grabs.
@@ -784,7 +819,16 @@ function bindCanvas() {
   const canvas = app.canvas;
   canvas.addEventListener('pointerdown', (event) => {
     event.preventDefault();
-    canvas.setPointerCapture?.(event.pointerId);
+    // Capture keeps a drag alive when the finger slides off the canvas, which on
+    // a phone is most drags. It is not a precondition for the gesture: a pointer
+    // id that is not an active pointer (a scripted event, or a second pointer
+    // that lost the race) makes the browser throw here, and letting that
+    // propagate would abort the press before pointerDown() ever ran.
+    try {
+      canvas.setPointerCapture?.(event.pointerId);
+    } catch {
+      // No capture available for this pointer; the gesture proceeds without it.
+    }
     // Any press counts as the gesture Web Audio requires, so the first note
     // sounds on the same touch that plays it.
     app.audio.start();
@@ -852,7 +896,9 @@ function bindHelp() {
   if (!sheet) return;
   const setOpen = (open) => sheet.toggleAttribute('hidden', !open);
   document.querySelector('#help-toggle')?.addEventListener('click', () => {
-    setOpen(!sheet.hasAttribute('hidden'));
+    // The sheet is visible when it has no `hidden` attribute, so Help opens it
+    // exactly when that attribute is present.
+    setOpen(sheet.hasAttribute('hidden'));
   });
   for (const id of ['#onboarding-close', '#panel-close']) {
     document.querySelector(id)?.addEventListener('click', () => setOpen(false));
@@ -979,7 +1025,11 @@ function main() {
   bindCanvas();
   bindControls();
   exposeTestApi();
-  announceBlow(app.organ.pipes[0]);
+  // The opening line invites the first gesture. It must not narrate something
+  // that has not happened: this used to call announceBlow(), so a page that had
+  // played no note at all opened by claiming one was sounding.
+  app.message = 'Nothing is sounding yet. Drag up from the block to cut a pipe, ' +
+    'or touch one of the three on the rack to hear it.';
   window.addEventListener('resize', resize);
   document.documentElement.dataset.stemReady = '1';
   window.requestAnimationFrame(frame);

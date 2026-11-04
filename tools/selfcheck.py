@@ -268,16 +268,23 @@ def check_source_contract() -> list[str]:
             problems.append(f"src contract changed, harness may now assert a stale rule: {description}")
 
     expect(r"Math\.max\(42, Math\.min\(72, height \* 0\.09\)\)", "blockY formula")
-    expect(r"Math\.max\(72, height \* 0\.12\)", "top label reserve")
+    # The label reserve must clear the legend that overlays the same strip, so it
+    # is derived from the legend's measured box rather than a fixed guess.
+    expect(r"Math\.max\(72, height \* 0\.12, legendBottomPx\(\)\)", "top label reserve clears the legend")
+    expect(r"function legendBottomPx\(\)", "legend measured for the label reserve")
     expect(r"viewSpanM: 0\.75", "fixed view span")
     expect(r"LAYOUT\.pxPerM = LAYOUT\.usableHeightPx / LAYOUT\.viewSpanM", "scale from viewport only")
     # The regression this guards: a scale derived from the longest pipe makes two
     # drags of different pixel length come out identical, killing the beat demo.
     if "longest * 1.08" in app_js or "smoothedSpanM" in app_js:
         problems.append("drawing scale reads the rack again; drag length stops being reliable")
-    expect(r"usableHeightPx = LAYOUT\.blockY - Math\.max\(72, height \* 0\.12\)", "usable height")
+    expect(r"usableHeightPx = LAYOUT\.blockY - labelReservePx", "usable height from the label reserve")
     expect(r"for \(let index = app\.organ\.pipes\.length - 1; index >= 0; index -= 1\)", "topmost-first hit test")
-    expect(r"halfWidth \+ 10", "mouth tab grab reach")
+    # The mouth's grab span and the width it is drawn must come from one constant,
+    # or the brass lip can be drawn wider than it is grabbable.
+    expect(r"const MOUTH_TAB_OVERHANG_PX = 11;", "mouth tab overhang constant")
+    expect(r"halfWidth \+ MOUTH_TAB_OVERHANG_PX", "mouth tab grab uses the drawn overhang")
+    expect(r"widthPx \+ MOUTH_TAB_OVERHANG_PX \* 2", "mouth tab drawn from the same constant")
     expect(r"minPipeWidthPx: 26", "min touch width")
     expect(r"basePipeWidthPx: 48", "base drawn pipe width")
     expect(r"boreVisualGain: 1\.6", "bore visual gain")
