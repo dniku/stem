@@ -154,9 +154,9 @@ What is still **not** verified:
   the browser's touchscreen API is unimplemented in Firefox. Synthetic
   `PointerEvent`s were tried first and proved misleading — they have no active
   pointer id, so they exercise a different path than a finger does.
-- **The lockfile under CI.** `flake.lock` is committed, and the locked nixpkgs
-  rev was verified to fetch, evaluate and build with a daemonless `nix build`,
-  but no CI run has yet executed with it (see CI).
+- **The lockfile under GitHub Actions.** `flake.lock` is committed and both CI
+  steps were reproduced locally against the locked nixpkgs, but no Actions run has
+  executed with it, so its runner-side behaviour is unconfirmed (see CI).
 
 Run `nix develop --command ./check.sh` (or, on a machine where nix cannot reach a
 daemon, `./tools/with-store-toolchain.sh ./check.sh`, which finds a node and
@@ -167,8 +167,9 @@ Playwright already in `/nix/store`) to reproduce.
 [`.github/workflows/check.yml`](.github/workflows/check.yml) runs the same toolchain definition and the same `./check.sh` as local development, not a second recipe — a CI that defines "correct" differently from the local shell is a CI that drifts. It additionally builds `packages.default` and requires the result to match the committed `index.html`, because `nix develop` alone never builds the package.
 
 **Pinning.** `flake.lock` is committed, so `nix build` and `nix develop` resolve
-one nixpkgs revision and CI runs the same node, Playwright and Firefox as anyone
-else running the checklist. That is what makes the 8 golden PNGs a meaningful
+one nixpkgs revision: node 22.23.4, Playwright 1.64.1, Firefox 157.0, verified by
+running the full checklist and `nix build` inside that locked shell. CI runs the
+same toolchain as anyone else. That is what makes the 8 golden PNGs a meaningful
 cross-machine claim rather than a local one. Two things it does not cover: the
 `with-store-toolchain.sh` shim reads `/nix/store` directly and ignores the lock,
 so it can run a different version (it is a no-daemon fallback, not the authority);
