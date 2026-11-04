@@ -36,24 +36,27 @@
         };
       });
 
-      packages = forAllSystems (pkgs:
-        {
-          # The artifact alone. `nix build` producing something other than
-          # exactly index.html would mean the bundler had started emitting
-          # siblings, which breaks the single-file promise.
-          default = pkgs.runCommand "stem" {
-            src = ./.;
-            nativeBuildInputs = [ pkgs.nodejs_22 ];
-          } ''
-            # Build into $out, not beside the sources: a Nix source tree is a
-            # read-only store path, so writing the artifact next to src/ fails
-            # with EACCES. tools/build.mjs takes the output path for this.
-            node "$src/tools/build.mjs" "$out/index.html"
-            test -s "$out/index.html"
-            # The artifact must be self-contained: no external asset references.
-            # Only bare in-page fragments (#) and inline data: URIs are allowed.
-            ! grep -qE '<(script|link|img|source|iframe)[^>]+(src|href)="[^#d]' "$out/index.html" \
-              || { echo "artifact references an external file"; exit 1; }
-          '';
-        });
-    }
+      packages = forAllSystems (pkgs: {
+        # The artifact alone. `nix build` producing something other than
+        # exactly index.html would mean the bundler had started emitting
+        # siblings, which breaks the single-file promise.
+        default =
+          pkgs.runCommand "stem"
+            {
+              src = ./.;
+              nativeBuildInputs = [ pkgs.nodejs_22 ];
+            }
+            ''
+              # Build into $out, not beside the sources: a Nix source tree is a
+              # read-only store path, so writing the artifact next to src/ fails
+              # with EACCES. tools/build.mjs takes the output path for this.
+              node "$src/tools/build.mjs" "$out/index.html"
+              test -s "$out/index.html"
+              # The artifact must be self-contained: no external asset references.
+              # Only bare in-page fragments (#) and inline data: URIs are allowed.
+              ! grep -qE '<(script|link|img|source|iframe)[^>]+(src|href)="[^#d]' "$out/index.html" \
+                || { echo "artifact references an external file"; exit 1; }
+            '';
+      });
+    };
+}
