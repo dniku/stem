@@ -93,11 +93,17 @@ def build() -> str:
 def main(argv: list[str]) -> None:
     # Output path is an argument for symmetry with tools/build.mjs, whose path
     # matters inside `nix build`; here it only ever defaults to the project root.
+    # --stdout writes the artifact to standard output and nothing else, so a
+    # check can compare it against the committed file without clobbering it.
+    if len(argv) > 1 and argv[1] == "--stdout":
+        sys.stdout.write(build())
+        return 0
     out = pathlib.Path(argv[1]) if len(argv) > 1 else ROOT / "index.html"
     page = build()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page)
     print(f"built {out} ({len(page.encode('utf-8')) / 1024:.1f} KiB) -- python port; run node tools/build.mjs for the authoritative copy")
+    return 0
 
 
 if __name__ == "__main__":

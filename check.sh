@@ -75,14 +75,22 @@ fi
 #     the local preview and the shipped file are different apps, and nothing else
 #     here would notice.
 report "2b/6 builder parity"
-if [[ -n $PYTHON ]] && ! diff <("$PYTHON" -c '
-import sys; sys.path.insert(0, "tools")
-import build_preview
-sys.stdout.write(build_preview.build())
-') index.html; then
-  fail "the python builder and the committed artifact differ (rebuild with node and re-check the port)"
+# Write the python port to a file rather than piping it inside a `!` condition:
+# negation would make an interpreter error (a bad import, a crashed builder)
+# look exactly like a byte-identical artifact, which is the one thing this phase
+# must never do.
+PARITY=.tmp/parity-artifact.html
+if [[ -z $PYTHON ]]; then
+  fail "python3 is not on PATH; builder parity cannot be checked"
+elif "$PYTHON" tools/build_preview.py --stdout > "$PARITY" 2> .tmp/parity-error.log; then
+  if diff "$PARITY" index.html; then
+    echo "python port reproduces the artifact byte for byte"
+  else
+    fail "the python builder and the committed artifact differ (rebuild with node and re-check the port)"
+  fi
 else
-  echo "python port reproduces the artifact byte for byte"
+  tail -5 .tmp/parity-error.log
+  fail "the python builder did not run; parity is unverified, not passed"
 fi
 
 # 3. Model self-check, in plain Python. This is the one phase that runs with no
