@@ -61,6 +61,9 @@ for file in src/*.js tools/*.mjs tests/*.mjs; do
 done
 if [[ -n $PYTHON ]]; then
   "$PYTHON" tools/check-syntax.py || fail "structural JS check failed"
+  # Scans the bundle as it is actually shipped, which is the only way to catch a
+  # truncation introduced by the bundler rather than by a source file.
+  "$PYTHON" tools/check-bundle.py || fail "the built bundle does not scan as complete JavaScript"
 else
   fail "python3 is not on PATH; tools/check-syntax.py cannot run"
 fi
